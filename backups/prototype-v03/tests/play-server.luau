@@ -1,0 +1,82 @@
+-- Install as a temporary Script in ServerScriptService during Play, after pressing Play in the game menu.
+-- Requires a fresh session; changes only that test session.
+local state=require(game.ServerScriptService.Services.PlayerStateService)
+local combat=require(game.ServerScriptService.Services.CombatService)
+local p=game.Players:GetPlayers()[1]
+assert(p and p:GetAttribute("Started"),"Press the in-game Play button first")
+local d=assert(state.Get(p),"No server profile")
+local c=p.Character local h=c.Humanoid local r=c.HumanoidRootPart
+local checks=0
+local function check(ok,message) assert(ok,message) checks+=1 end
+check(d.Gold==15 and d.Items.Bread==2 and d.Items.GatheringTool==1,"Starter profile incorrect")
+state.Buckets[p]=nil state.Handle(p,"Play",2)
+check(d.Gold==15 and d.Items.Bread==2,"Duplicate Play changed starter inventory")
+state.Handle(p,{},math.huge) combat.Handle(p,{})
+check(d.Stamina>=0 and d.Stamina<=100,"Malformed payload mutated stamina")
+c:PivotTo(CFrame.new(35,4,45)) r:SetNetworkOwner(nil)
+d.Stamina=100 d.Sprint=true d.LastSpend=os.clock()
+h:MoveTo(Vector3.new(55,4,45))
+task.wait(.7)
+check(d.Stamina<99 and h.WalkSpeed==22,"Server sprint did not drain stamina")
+d.Sprint=false h:MoveTo(r.Position)
+local spent=d.Stamina task.wait(2)
+check(d.Stamina>spent and h.WalkSpeed==14,"Stamina or walk speed did not recover")
+print("CROWN_SPRINT_RECOVERY_PASS",d.Stamina)
+local interactions=require(game.ServerScriptService.Services.InteractionService)
+local rack=workspace.InteractionPoints.Crownlands:FindFirstChild("Стойка учебного оружия")
+c:PivotTo(CFrame.new(rack.Position+Vector3.new(0,1,4)))
+interactions.Buckets[p]=nil interactions.Handle(rack.ProximityPrompt,p)
+check(d.Items.TrainingSword==1,"Training item not granted")
+interactions.Buckets[p]=nil interactions.Handle(rack.ProximityPrompt,p)
+check(d.Items.TrainingSword==1,"Training pickup duplicated weapon")
+check(c:FindFirstChild("CrownSword") and c:FindFirstChild("CrownShield"),"Equipment models missing")
+local npc=workspace.NPCs:FindFirstChild("Учебный противник")
+local nr=npc.HumanoidRootPart local nh=npc.Humanoid
+c:PivotTo(CFrame.lookAt(nr.Position+Vector3.new(0,0,5),nr.Position))
+h:MoveTo(r.Position) d.Stamina=100 d.BusyUntil=0 combat.Buckets[p]=nil
+local before=nh.Health combat.Handle(p,"Light")
+check(d.Stamina==88,"Light stamina cost incorrect")
+combat.Handle(p,"Light")
+task.wait(.35)
+check(nh.Health==before-12,"Light hit/cooldown failed")
+combat.Handle(p,"Light") task.wait(.1)
+check(nh.Health==before-12,"Cooldown bypass caused duplicate damage")
+task.wait(.45)
+d.Stamina=100 combat.Buckets[p]=nil combat.Handle(p,"Heavy")
+task.wait(.6)
+check(nh.Health==before-34,"Heavy damage failed")
+print("CROWN_COMBAT_DAMAGE_PASS",nh.Health)
+task.wait(.9)
+c:PivotTo(CFrame.lookAt(nr.Position+Vector3.new(0,0,18),nr.Position))
+d.BusyUntil=0 combat.Buckets[p]=nil combat.Handle(p,"Light") task.wait(.35)
+check(nh.Health==before-34,"Out-of-range attack dealt damage")
+task.wait(.5)
+d.BusyUntil=0 combat.Buckets[p]=nil combat.Handle(p,"Block")
+check(d.Block and p:GetAttribute("Blocking"),"Block did not start")
+combat.Handle(p,"Unblock")
+check(not d.Block and not p:GetAttribute("Blocking"),"Rapid block release was dropped")
+state.Buckets[p]=nil state.Handle(p,"Sprint",true) state.Handle(p,"Sprint",false)
+check(not d.Sprint,"Rapid sprint release was dropped")
+task.wait(.1)
+d.BusyUntil=0 d.Stamina=100 combat.Buckets[p]=nil
+local dodgeStart=r.Position combat.Handle(p,"Dodge")
+check((r.Position-dodgeStart).Magnitude>3 and d.Stamina==78,"Dodge cost/movement failed")
+check(d.DodgeUntil>os.clock(),"Dodge invulnerability missing")
+print("CROWN_BLOCK_DODGE_PASS")
+-- Kill the training opponent and verify its timed replacement.
+nh.Health=0
+task.wait(12.6)
+local fresh=workspace.NPCs:FindFirstChild("Учебный противник")
+check(fresh and fresh~=npc and fresh.Humanoid.Health==80,"Opponent failed to respawn")
+local old=c h.Health=0
+local deadline=os.clock()+12
+repeat task.wait(.2) until (p.Character and p.Character~=old) or os.clock()>deadline
+local nextCharacter=p.Character
+check(nextCharacter and nextCharacter~=old,"Player failed to respawn")
+local nextRoot=nextCharacter:WaitForChild("HumanoidRootPart",5)
+task.wait(1.4)
+check(nextRoot and not nextRoot.Anchored and (nextRoot.Position-Vector3.new(0,3,38)).Magnitude<8,"Respawn location/movement incorrect")
+check(nextCharacter:FindFirstChild("CrownSword") and nextCharacter:FindFirstChild("CrownShield"),"Equipment missing after respawn")
+check(d.Gold==15 and d.Items.Bread==2,"Death duplicated starter inventory")
+print("CROWN_PLAY_SERVER_TESTS_PASS",checks)
+script:Destroy()

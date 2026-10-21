@@ -1,0 +1,5 @@
+local controllers=script.Parent:WaitForChild("Controllers")
+require(controllers.UIController).Start()
+require(controllers.InventoryController).Start()
+require(controllers.InputController).Start()
+require(controllers.CombatController).Start()

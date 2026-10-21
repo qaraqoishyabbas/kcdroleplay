@@ -1,0 +1,4 @@
+2026-10-20T16:47:52.045Z,7846.045898,6bf3b000,6,Info [FLog::CreatorOutput] SPAWN_DETAIL_BUILT 1089 instances; free central passage
+2026-10-20T16:49:09.596Z,7923.596680,6bf3b000,6,Info [FLog::CreatorOutput] SPAWN_APPROACH_WALK_PASS -1200, 4.998024940490723, -415.47283935546875 gate crossed alive
+2026-10-20T16:50:10.104Z,7984.104980,6bf3b000,6,Info [FLog::CreatorOutput] MAP_EDIT_PASS 16465 assertions; no custom gameplay scripts or UI
+2026-10-20T16:50:47.276Z,8021.276855,f2e4a180,6,Info [FLog::CreatorOutput] Saved to '/Users/abbasqaraqoishy/Developer/kcdroleplay/kcdroleplay.rbxl'

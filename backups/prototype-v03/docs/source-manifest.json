@@ -1,0 +1,82 @@
+[
+  {
+    "file": "ReplicatedStorage/Shared/Config.luau",
+    "explorer": "ReplicatedStorage/Shared/Config",
+    "type": "ModuleScript"
+  },
+  {
+    "file": "ReplicatedStorage/Shared/ItemDefinitions.luau",
+    "explorer": "ReplicatedStorage/Shared/ItemDefinitions",
+    "type": "ModuleScript"
+  },
+  {
+    "file": "ReplicatedStorage/Shared/UtilityModules.luau",
+    "explorer": "ReplicatedStorage/Shared/UtilityModules",
+    "type": "ModuleScript"
+  },
+  {
+    "file": "ReplicatedStorage/Shared/WeaponDefinitions.luau",
+    "explorer": "ReplicatedStorage/Shared/WeaponDefinitions",
+    "type": "ModuleScript"
+  },
+  {
+    "file": "ServerScriptService/Bootstrap.server.luau",
+    "explorer": "ServerScriptService/Bootstrap",
+    "type": "Script"
+  },
+  {
+    "file": "ServerScriptService/Services/CombatService.luau",
+    "explorer": "ServerScriptService/Services/CombatService",
+    "type": "ModuleScript"
+  },
+  {
+    "file": "ServerScriptService/Services/EconomyService.luau",
+    "explorer": "ServerScriptService/Services/EconomyService",
+    "type": "ModuleScript"
+  },
+  {
+    "file": "ServerScriptService/Services/InteractionService.luau",
+    "explorer": "ServerScriptService/Services/InteractionService",
+    "type": "ModuleScript"
+  },
+  {
+    "file": "ServerScriptService/Services/InventoryService.luau",
+    "explorer": "ServerScriptService/Services/InventoryService",
+    "type": "ModuleScript"
+  },
+  {
+    "file": "ServerScriptService/Services/PlayerStateService.luau",
+    "explorer": "ServerScriptService/Services/PlayerStateService",
+    "type": "ModuleScript"
+  },
+  {
+    "file": "StarterPlayer/StarterPlayerScripts/ClientBootstrap.client.luau",
+    "explorer": "StarterPlayer/StarterPlayerScripts/ClientBootstrap",
+    "type": "LocalScript"
+  },
+  {
+    "file": "StarterPlayer/StarterPlayerScripts/Controllers/CombatController.luau",
+    "explorer": "StarterPlayer/StarterPlayerScripts/Controllers/CombatController",
+    "type": "ModuleScript"
+  },
+  {
+    "file": "StarterPlayer/StarterPlayerScripts/Controllers/InputController.luau",
+    "explorer": "StarterPlayer/StarterPlayerScripts/Controllers/InputController",
+    "type": "ModuleScript"
+  },
+  {
+    "file": "StarterPlayer/StarterPlayerScripts/Controllers/InventoryController.luau",
+    "explorer": "StarterPlayer/StarterPlayerScripts/Controllers/InventoryController",
+    "type": "ModuleScript"
+  },
+  {
+    "file": "StarterPlayer/StarterPlayerScripts/Controllers/TouchControls.luau",
+    "explorer": "StarterPlayer/StarterPlayerScripts/Controllers/TouchControls",
+    "type": "ModuleScript"
+  },
+  {
+    "file": "StarterPlayer/StarterPlayerScripts/Controllers/UIController.luau",
+    "explorer": "StarterPlayer/StarterPlayerScripts/Controllers/UIController",
+    "type": "ModuleScript"
+  }
+]

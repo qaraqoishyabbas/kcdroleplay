@@ -1,0 +1,39 @@
+{
+  "package": "POLYGON - Knights Pack.unitypackage",
+  "sourceSha256": "237a51e44e050502b761ef20e292c6280423adf7da721cc3093421e924241b1a",
+  "files": [
+    {
+      "path": "Assets/PolygonKnights/Models/SM_Env_Tree_01.fbx",
+      "guid": "2290675b2cccbe54798045d5872bcbb5",
+      "sha256": "69a3c5c9ad0087c0f3fc7cff4d731632c466b65e7f3a5e0afb512b94a893dd35",
+      "bytes": 34160
+    },
+    {
+      "path": "Assets/PolygonKnights/Textures/Texture_01.png",
+      "guid": "370214d29559d094bbd95faa22ad92b7",
+      "sha256": "099f4f5e1c28a9279753c527bc690767d28b8387ee7ad6223e46e0848c713076",
+      "bytes": 10483
+    },
+    {
+      "path": "Assets/PolygonKnights/Models/SM_Prop_Fence_01.fbx",
+      "guid": "b5e1c19bd7f53144281d7486662e0043",
+      "sha256": "9dbe586501d258d9b5c27a07cee87a4ecdb44c746b6c1bd85440caad8816dd13",
+      "bytes": 48992
+    },
+    {
+      "path": "Assets/PolygonKnights/Models/SM_Prop_Cart_01.fbx",
+      "guid": "bb9ab3090ec756340b4d9ea8ada040fa",
+      "sha256": "cf55a254625d2337a29029e86f73fd1cb07a81f0c4531ac098673f1f803321d7",
+      "bytes": 75968
+    },
+    {
+      "path": "Assets/PolygonKnights/Models/SM_Bld_Tent_01.fbx",
+      "guid": "cc89fb97742847c46bce48932a734c4c",
+      "sha256": "58459715d76abc29f1b8bf2ed9eb82098e01e5633c9e2841a270f5e10f628d0f",
+      "bytes": 49872
+    }
+  ],
+  "license": "Standard Unity Asset Store EULA listed for POLYGON Knights Pack; user-supplied archive does not contain a license document",
+  "licenseSource": "https://marketplace.unity.com/packages/3d/environments/fantasy/polygon-knights-pack-art-by-synty-83694",
+  "status": "Prepared in temporary directory for native Studio import; engine import not yet verified"
+}
