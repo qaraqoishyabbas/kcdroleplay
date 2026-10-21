@@ -20,7 +20,20 @@ local Config = {}
 Config.Version = "combat 1.0"
 Config.ModelName = "TrainingYard"
 
-Config.Player = { MaxHealth = 100, RespawnTime = 4 }
+Config.Player = { MaxHealth = 100, RespawnTime = 4, StartGold = 200 }
+
+Config.Gold = { DummyReward = 2, DummyCooldown = 0.4 }
+
+Config.Shop = {
+	{ Id = "Sword", Kind = "Weapon", Price = 40 },
+	{ Id = "Axe", Kind = "Weapon", Price = 70 },
+	{ Id = "Spear", Kind = "Weapon", Price = 35 },
+	{ Id = "Bow", Kind = "Weapon", Price = 55 },
+	{ Id = "Shield", Kind = "Shield", Price = 30 },
+	{ Id = "Helmet", Kind = "Armor", Price = 25 },
+	{ Id = "Cuirass", Kind = "Armor", Price = 60 },
+	{ Id = "Greaves", Kind = "Armor", Price = 20 },
+}
 
 Config.Movement = { Walk = 22 }
 
@@ -126,7 +139,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Net = {}
 Net.FolderName = "CombatRemotes"
-Net.Names = { "Attack", "Block", "DrawStart", "Release", "Hud", "Notice" }
+Net.Names = { "Attack", "Block", "DrawStart", "Release", "Hud", "Notice", "Shop", "Buy" }
 
 function Net.server()
 	local folder = ReplicatedStorage:FindFirstChild(Net.FolderName)
@@ -751,9 +764,118 @@ function Melee.resolve(player, weapon, direction)
 			break
 		end
 	end
+
+	-- Training hits pay a couple of coins, so the armoury has an income loop.
+	local now = workspace:GetServerTimeNow()
+	local state = ctx.stats.get(player)
+	if now - state.lastTrainReward >= ctx.config.Gold.DummyCooldown then
+		for _, target in ctx.world.trainingParts do
+			local delta = target.Position - root.Position
+			local flat = Vector3.new(delta.X, 0, delta.Z)
+			if flat.Magnitude > 0.1 and flat.Magnitude <= weapon.Reach + 1.5 and math.abs(delta.Y) <= 7 then
+				if forward:Dot(flat.Unit) >= cosHalf then
+					state.lastTrainReward = now
+					ctx.stats.addGold(player, ctx.config.Gold.DummyReward, "мишень")
+					break
+				end
+			end
+		end
+	end
 end
 
 return Melee
+]]
+editor:UpdateSourceAsync(obj,function() return source end)
+end
+do
+local parent=ServerScriptService
+parent=ensure(parent,"Combat","Folder")
+local obj=ensure(parent,"Shop","ModuleScript")
+local source=[[-- Weapon seller: a fixed catalog with prices, gold is a player attribute.
+local Shop = {}
+local ctx = nil
+
+function Shop.init(context)
+	ctx = context
+end
+
+function Shop.catalog()
+	return ctx.config.Shop
+end
+
+function Shop.entry(itemId)
+	for _, item in ctx.config.Shop do
+		if item.Id == itemId then
+			return item
+		end
+	end
+	return nil
+end
+
+function Shop.displayName(itemId)
+	for _, weapon in ctx.config.Weapons do
+		if weapon.Id == itemId then
+			return weapon.Name
+		end
+	end
+	for _, piece in ctx.config.Armor do
+		if piece.Id == itemId then
+			return piece.Name
+		end
+	end
+	return itemId
+end
+
+function Shop.open(player)
+	ctx.net.Shop:FireClient(player, {
+		open = true,
+		gold = ctx.stats.getGold(player),
+	})
+end
+
+function Shop.close(player)
+	ctx.net.Shop:FireClient(player, { open = false, gold = ctx.stats.getGold(player) })
+end
+
+function Shop.buy(player, itemId)
+	if type(itemId) ~= "string" then
+		return
+	end
+	local item = Shop.entry(itemId)
+	if not item then
+		ctx.net.Notice:FireClient(player, { text = "Такого товара нет", kind = "bad" })
+		return
+	end
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not humanoid or humanoid.Health <= 0 then
+		ctx.net.Notice:FireClient(player, { text = "Сначала вернись в бой", kind = "bad" })
+		return
+	end
+	local gold = ctx.stats.getGold(player)
+	if gold < item.Price then
+		ctx.net.Notice:FireClient(player, { text = "Не хватает " .. (item.Price - gold) .. " золота", kind = "bad" })
+		return
+	end
+	local ok = false
+	if item.Kind == "Weapon" then
+		ok = ctx.arsenal.setWeapon(player, item.Id)
+	elseif item.Kind == "Shield" then
+		ok = ctx.arsenal.setShield(player, true)
+	elseif item.Kind == "Armor" then
+		ok = ctx.arsenal.wear(player, item.Id)
+	end
+	if not ok then
+		ctx.net.Notice:FireClient(player, { text = "Не удалось выдать предмет", kind = "bad" })
+		return
+	end
+	ctx.stats.setGold(player, gold - item.Price)
+	ctx.net.Notice:FireClient(player, { text = "Куплено: " .. Shop.displayName(item.Id) .. " за " .. item.Price, kind = "good" })
+	ctx.net.Hud:FireClient(player, ctx.stats.hudFor(player))
+	ctx.net.Shop:FireClient(player, { open = true, gold = ctx.stats.getGold(player) })
+end
+
+return Shop
 ]]
 editor:UpdateSourceAsync(obj,function() return source end)
 end
@@ -789,6 +911,7 @@ function Stats.get(player)
 			weapon = nil,
 			shield = false,
 			armor = {},
+			lastTrainReward = 0,
 		}
 		states[player] = state
 	end
@@ -947,6 +1070,22 @@ function Stats.loop()
 	end
 end
 
+function Stats.getGold(player)
+	return player:GetAttribute("Gold") or 0
+end
+
+function Stats.setGold(player, amount)
+	player:SetAttribute("Gold", math.max(0, math.floor(amount + 0.5)))
+end
+
+function Stats.addGold(player, amount, reason)
+	Stats.setGold(player, Stats.getGold(player) + amount)
+	if amount > 0 then
+		ctx.net.Notice:FireClient(player, { text = "+" .. amount .. " золота (" .. (reason or "добыча") .. ")", kind = "good" })
+	end
+	ctx.net.Hud:FireClient(player, Stats.hudFor(player))
+end
+
 function Stats.hudFor(player)
 	local state = Stats.get(player)
 	local weaponName = "кулаки"
@@ -967,6 +1106,7 @@ function Stats.hudFor(player)
 		shield = state.shield,
 		armor = ctx.arsenal.armorLabel(player),
 		blocking = state.blocking,
+		gold = Stats.getGold(player),
 	}
 end
 
@@ -998,6 +1138,8 @@ function World.init(config)
 	World.weaponPoints = {}
 	World.shieldPoint = nil
 	World.armorPoint = nil
+	World.vendorPoint = nil
+	World.trainingParts = {}
 	for _, item in yard:GetDescendants() do
 		if item:IsA("BasePart") then
 			local point = item:GetAttribute("CombatPoint")
@@ -1007,6 +1149,12 @@ function World.init(config)
 				World.shieldPoint = item
 			elseif point == "Armor" then
 				World.armorPoint = item
+			elseif point == "Vendor" then
+				World.vendorPoint = item
+			end
+			local parentName = item.Parent and item.Parent.Name or ""
+			if string.sub(parentName, 1, 6) == "Target" or string.sub(parentName, 1, 5) == "Dummy" or parentName == "Targets" then
+				table.insert(World.trainingParts, item)
 			end
 		end
 	end
@@ -1026,6 +1174,52 @@ end
 
 function World.attach(ctx)
 	World.prompts = {}
+
+	local function makeVendor(point)
+		local base = point.Position
+		local function piece(name, size, offset, color, shape)
+			local item = Instance.new("Part")
+			item.Name = name
+			item.Size = size
+			item.CFrame = CFrame.new(base + offset)
+			item.Color = color
+			item.Material = Enum.Material.SmoothPlastic
+			item.Anchored = true
+			item.CanCollide = false
+			item.CanQuery = false
+			item.CanTouch = false
+			item.Parent = point
+			if shape then
+				item.Shape = shape
+			end
+			return item
+		end
+		piece("Torso", Vector3.new(2.2, 2.4, 1.2), Vector3.new(0, 2.6, 0), Color3.fromRGB(74, 62, 48))
+		piece("Head", Vector3.new(1.5, 1.5, 1.5), Vector3.new(0, 4.5, 0), Color3.fromRGB(212, 180, 148), Enum.PartType.Ball)
+		piece("Hood", Vector3.new(1.9, 0.6, 1.9), Vector3.new(0, 5.1, 0), Color3.fromRGB(58, 48, 38))
+		local board = Instance.new("BillboardGui")
+		board.Size = UDim2.fromOffset(200, 40)
+		board.StudsOffset = Vector3.new(0, 3.4, 0)
+		board.AlwaysOnTop = true
+		board.Parent = point
+		local label = Instance.new("TextLabel")
+		label.Size = UDim2.fromScale(1, 1)
+		label.BackgroundTransparency = 1
+		label.Font = Enum.Font.GothamBold
+		label.TextScaled = true
+		label.TextColor3 = Color3.fromRGB(240, 224, 186)
+		label.Text = "ОРУЖЕЙНИК"
+		label.Parent = board
+	end
+
+	if World.vendorPoint then
+		makeVendor(World.vendorPoint)
+		local prompt = makePrompt(World.vendorPoint, "Торговать", "Оружейник", 12)
+		prompt.Triggered:Connect(function(player)
+			ctx.shop.open(player)
+		end)
+		table.insert(World.prompts, prompt)
+	end
 
 	for _, part in World.weaponPoints do
 		local weaponId = part:GetAttribute("WeaponId")
@@ -1100,6 +1294,7 @@ local Arsenal = require(folder.Arsenal)
 local Stats = require(folder.Stats)
 local Melee = require(folder.Melee)
 local Arrows = require(folder.Arrows)
+local Shop = require(folder.Shop)
 
 local net = Net.server()
 World.init(Config)
@@ -1112,12 +1307,14 @@ local ctx = {
 	stats = Stats,
 	melee = Melee,
 	arrows = Arrows,
+	shop = Shop,
 }
 
 Arsenal.init(ctx)
 Stats.init(ctx)
 Melee.init(ctx)
 Arrows.init(ctx)
+Shop.init(ctx)
 World.attach(ctx)
 
 Players.RespawnTime = Config.Player.RespawnTime
@@ -1136,6 +1333,9 @@ end
 
 local function onPlayer(player)
 	Stats.get(player)
+	if player:GetAttribute("Gold") == nil then
+		player:SetAttribute("Gold", Config.Player.StartGold)
+	end
 	player.CharacterAdded:Connect(function(character)
 		onCharacter(player, character)
 	end)
@@ -1169,6 +1369,13 @@ net.Release.OnServerEvent:Connect(function(player, aim)
 		return
 	end
 	Arrows.release(player, aim)
+end)
+
+net.Buy.OnServerEvent:Connect(function(player, itemId)
+	if type(itemId) ~= "string" or #itemId > 24 then
+		return
+	end
+	Shop.buy(player, itemId)
 end)
 
 task.spawn(function()
@@ -1322,7 +1529,116 @@ noticeLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
 noticeLayout.Padding = UDim.new(0, 3)
 noticeLayout.Parent = notices
 
-local state = { weaponKind = "None", blocking = false, stamina = 100, staminaMax = 100 }
+-- ---------------------------------------------------------------- armoury shop
+local function itemName(itemId)
+	for _, weapon in Config.Weapons do
+		if weapon.Id == itemId then
+			return weapon.Name
+		end
+	end
+	for _, piece in Config.Armor do
+		if piece.Id == itemId then
+			return piece.Name
+		end
+	end
+	return itemId
+end
+
+local shopPanel = Instance.new("Frame")
+shopPanel.Name = "Shop"
+shopPanel.AnchorPoint = Vector2.new(0.5, 0.5)
+shopPanel.Position = UDim2.new(0.5, 0, 0.5, 0)
+shopPanel.Size = UDim2.fromOffset(360, 380)
+shopPanel.BackgroundColor3 = Color3.fromRGB(30, 27, 22)
+shopPanel.BackgroundTransparency = 0.05
+shopPanel.BorderSizePixel = 0
+shopPanel.Visible = false
+shopPanel.Parent = gui
+local shopCorner = Instance.new("UICorner")
+shopCorner.CornerRadius = UDim.new(0, 12)
+shopCorner.Parent = shopPanel
+
+local shopTitle = Instance.new("TextLabel")
+shopTitle.Position = UDim2.fromOffset(16, 10)
+shopTitle.Size = UDim2.new(1, -32, 0, 26)
+shopTitle.BackgroundTransparency = 1
+shopTitle.Font = Enum.Font.GothamBold
+shopTitle.TextSize = 18
+shopTitle.TextXAlignment = Enum.TextXAlignment.Left
+shopTitle.TextColor3 = Color3.fromRGB(240, 226, 190)
+shopTitle.Text = "ОРУЖЕЙНИК"
+shopTitle.Parent = shopPanel
+
+local shopGold = Instance.new("TextLabel")
+shopGold.Position = UDim2.fromOffset(16, 34)
+shopGold.Size = UDim2.new(1, -32, 0, 20)
+shopGold.BackgroundTransparency = 1
+shopGold.Font = Enum.Font.GothamMedium
+shopGold.TextSize = 14
+shopGold.TextXAlignment = Enum.TextXAlignment.Left
+shopGold.TextColor3 = Color3.fromRGB(226, 200, 120)
+shopGold.Text = "Золото: 0"
+shopGold.Parent = shopPanel
+
+local shopList = Instance.new("Frame")
+shopList.Position = UDim2.fromOffset(16, 62)
+shopList.Size = UDim2.new(1, -32, 1, -112)
+shopList.BackgroundTransparency = 1
+shopList.Parent = shopPanel
+local shopLayout = Instance.new("UIListLayout")
+shopLayout.Padding = UDim.new(0, 4)
+shopLayout.Parent = shopList
+
+for _, item in Config.Shop do
+	local row = Instance.new("TextButton")
+	row.Size = UDim2.new(1, 0, 0, 30)
+	row.BackgroundColor3 = Color3.fromRGB(52, 46, 36)
+	row.BorderSizePixel = 0
+	row.Font = Enum.Font.GothamMedium
+	row.TextSize = 14
+	row.TextColor3 = Color3.fromRGB(236, 228, 208)
+	row.Text = string.format("%s — %d золота", itemName(item.Id), item.Price)
+	row.Parent = shopList
+	local rowCorner = Instance.new("UICorner")
+	rowCorner.CornerRadius = UDim.new(0, 8)
+	rowCorner.Parent = row
+	row.MouseButton1Click:Connect(function()
+		remotes.Buy:FireServer(item.Id)
+	end)
+end
+
+local shopClose = Instance.new("TextButton")
+shopClose.AnchorPoint = Vector2.new(0.5, 1)
+shopClose.Position = UDim2.new(0.5, 0, 1, -12)
+shopClose.Size = UDim2.fromOffset(160, 30)
+shopClose.BackgroundColor3 = Color3.fromRGB(60, 52, 40)
+shopClose.BorderSizePixel = 0
+shopClose.Font = Enum.Font.GothamBold
+shopClose.TextSize = 14
+shopClose.TextColor3 = Color3.fromRGB(238, 228, 206)
+shopClose.Text = "Закрыть"
+shopClose.Parent = shopPanel
+local closeCorner = Instance.new("UICorner")
+closeCorner.CornerRadius = UDim.new(0, 8)
+closeCorner.Parent = shopClose
+shopClose.MouseButton1Click:Connect(function()
+	shopPanel.Visible = false
+end)
+
+local shopGoldValue = 0
+
+remotes.Shop.OnClientEvent:Connect(function(payload)
+	if payload.open == true then
+		shopPanel.Visible = true
+		shopGoldValue = payload.gold or shopGoldValue
+		shopGold.Text = "Золото: " .. tostring(shopGoldValue)
+	else
+		shopPanel.Visible = false
+		shopGoldValue = payload.gold or shopGoldValue
+	end
+end)
+
+local state = { weaponKind = "None", blocking = false, stamina = 100, staminaMax = 100, gold = 0 }
 local drawing = false
 local drawStarted = 0
 local recentX, recentY = 0, 0
@@ -1465,6 +1781,9 @@ RunService.RenderStepped:Connect(function()
 		healthFill.Size = UDim2.fromScale(health, 1)
 	end
 	staminaFill.Size = UDim2.fromScale(math.clamp(state.stamina / math.max(1, state.staminaMax), 0, 1), 1)
+	if shopPanel.Visible then
+		shopGold.Text = "Золото: " .. tostring(player:GetAttribute("Gold") or shopGoldValue)
+	end
 
 	if drawing then
 		local power = math.clamp((os.clock() - drawStarted - bowDrawMin) / math.max(0.01, bowDrawMax - bowDrawMin), 0, 1)
@@ -1475,8 +1794,8 @@ end)
 editor:UpdateSourceAsync(obj,function() return source end)
 obj.Enabled=true
 end
-print("COMBAT_INSTALL_OK",9,"source files")
+print("COMBAT_INSTALL_OK",10,"source files")
 do
 local config=ReplicatedStorage:FindFirstChild("CombatConfig")
-if config then config:SetAttribute("InstalledBuild",1) end
+if config then config:SetAttribute("InstalledBuild",2) end
 end

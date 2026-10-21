@@ -25,6 +25,11 @@
     "class": "ModuleScript"
   },
   {
+    "file": "ServerScriptService/Combat/Shop.luau",
+    "path": "ServerScriptService/Combat/Shop",
+    "class": "ModuleScript"
+  },
+  {
     "file": "ServerScriptService/Combat/Stats.luau",
     "path": "ServerScriptService/Combat/Stats",
     "class": "ModuleScript"

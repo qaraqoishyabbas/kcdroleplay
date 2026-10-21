@@ -12,6 +12,7 @@ local Arsenal = require(folder.Arsenal)
 local Stats = require(folder.Stats)
 local Melee = require(folder.Melee)
 local Arrows = require(folder.Arrows)
+local Shop = require(folder.Shop)
 
 local net = Net.server()
 World.init(Config)
@@ -24,12 +25,14 @@ local ctx = {
 	stats = Stats,
 	melee = Melee,
 	arrows = Arrows,
+	shop = Shop,
 }
 
 Arsenal.init(ctx)
 Stats.init(ctx)
 Melee.init(ctx)
 Arrows.init(ctx)
+Shop.init(ctx)
 World.attach(ctx)
 
 Players.RespawnTime = Config.Player.RespawnTime
@@ -48,6 +51,9 @@ end
 
 local function onPlayer(player)
 	Stats.get(player)
+	if player:GetAttribute("Gold") == nil then
+		player:SetAttribute("Gold", Config.Player.StartGold)
+	end
 	player.CharacterAdded:Connect(function(character)
 		onCharacter(player, character)
 	end)
@@ -81,6 +87,13 @@ net.Release.OnServerEvent:Connect(function(player, aim)
 		return
 	end
 	Arrows.release(player, aim)
+end)
+
+net.Buy.OnServerEvent:Connect(function(player, itemId)
+	if type(itemId) ~= "string" or #itemId > 24 then
+		return
+	end
+	Shop.buy(player, itemId)
 end)
 
 task.spawn(function()

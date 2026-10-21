@@ -3,7 +3,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Net = {}
 Net.FolderName = "CombatRemotes"
-Net.Names = { "Attack", "Block", "DrawStart", "Release", "Hud", "Notice" }
+Net.Names = { "Attack", "Block", "DrawStart", "Release", "Hud", "Notice", "Shop", "Buy" }
 
 function Net.server()
 	local folder = ReplicatedStorage:FindFirstChild(Net.FolderName)

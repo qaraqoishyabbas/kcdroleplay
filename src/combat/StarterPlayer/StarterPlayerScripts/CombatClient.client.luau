@@ -133,7 +133,116 @@ noticeLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
 noticeLayout.Padding = UDim.new(0, 3)
 noticeLayout.Parent = notices
 
-local state = { weaponKind = "None", blocking = false, stamina = 100, staminaMax = 100 }
+-- ---------------------------------------------------------------- armoury shop
+local function itemName(itemId)
+	for _, weapon in Config.Weapons do
+		if weapon.Id == itemId then
+			return weapon.Name
+		end
+	end
+	for _, piece in Config.Armor do
+		if piece.Id == itemId then
+			return piece.Name
+		end
+	end
+	return itemId
+end
+
+local shopPanel = Instance.new("Frame")
+shopPanel.Name = "Shop"
+shopPanel.AnchorPoint = Vector2.new(0.5, 0.5)
+shopPanel.Position = UDim2.new(0.5, 0, 0.5, 0)
+shopPanel.Size = UDim2.fromOffset(360, 380)
+shopPanel.BackgroundColor3 = Color3.fromRGB(30, 27, 22)
+shopPanel.BackgroundTransparency = 0.05
+shopPanel.BorderSizePixel = 0
+shopPanel.Visible = false
+shopPanel.Parent = gui
+local shopCorner = Instance.new("UICorner")
+shopCorner.CornerRadius = UDim.new(0, 12)
+shopCorner.Parent = shopPanel
+
+local shopTitle = Instance.new("TextLabel")
+shopTitle.Position = UDim2.fromOffset(16, 10)
+shopTitle.Size = UDim2.new(1, -32, 0, 26)
+shopTitle.BackgroundTransparency = 1
+shopTitle.Font = Enum.Font.GothamBold
+shopTitle.TextSize = 18
+shopTitle.TextXAlignment = Enum.TextXAlignment.Left
+shopTitle.TextColor3 = Color3.fromRGB(240, 226, 190)
+shopTitle.Text = "ОРУЖЕЙНИК"
+shopTitle.Parent = shopPanel
+
+local shopGold = Instance.new("TextLabel")
+shopGold.Position = UDim2.fromOffset(16, 34)
+shopGold.Size = UDim2.new(1, -32, 0, 20)
+shopGold.BackgroundTransparency = 1
+shopGold.Font = Enum.Font.GothamMedium
+shopGold.TextSize = 14
+shopGold.TextXAlignment = Enum.TextXAlignment.Left
+shopGold.TextColor3 = Color3.fromRGB(226, 200, 120)
+shopGold.Text = "Золото: 0"
+shopGold.Parent = shopPanel
+
+local shopList = Instance.new("Frame")
+shopList.Position = UDim2.fromOffset(16, 62)
+shopList.Size = UDim2.new(1, -32, 1, -112)
+shopList.BackgroundTransparency = 1
+shopList.Parent = shopPanel
+local shopLayout = Instance.new("UIListLayout")
+shopLayout.Padding = UDim.new(0, 4)
+shopLayout.Parent = shopList
+
+for _, item in Config.Shop do
+	local row = Instance.new("TextButton")
+	row.Size = UDim2.new(1, 0, 0, 30)
+	row.BackgroundColor3 = Color3.fromRGB(52, 46, 36)
+	row.BorderSizePixel = 0
+	row.Font = Enum.Font.GothamMedium
+	row.TextSize = 14
+	row.TextColor3 = Color3.fromRGB(236, 228, 208)
+	row.Text = string.format("%s — %d золота", itemName(item.Id), item.Price)
+	row.Parent = shopList
+	local rowCorner = Instance.new("UICorner")
+	rowCorner.CornerRadius = UDim.new(0, 8)
+	rowCorner.Parent = row
+	row.MouseButton1Click:Connect(function()
+		remotes.Buy:FireServer(item.Id)
+	end)
+end
+
+local shopClose = Instance.new("TextButton")
+shopClose.AnchorPoint = Vector2.new(0.5, 1)
+shopClose.Position = UDim2.new(0.5, 0, 1, -12)
+shopClose.Size = UDim2.fromOffset(160, 30)
+shopClose.BackgroundColor3 = Color3.fromRGB(60, 52, 40)
+shopClose.BorderSizePixel = 0
+shopClose.Font = Enum.Font.GothamBold
+shopClose.TextSize = 14
+shopClose.TextColor3 = Color3.fromRGB(238, 228, 206)
+shopClose.Text = "Закрыть"
+shopClose.Parent = shopPanel
+local closeCorner = Instance.new("UICorner")
+closeCorner.CornerRadius = UDim.new(0, 8)
+closeCorner.Parent = shopClose
+shopClose.MouseButton1Click:Connect(function()
+	shopPanel.Visible = false
+end)
+
+local shopGoldValue = 0
+
+remotes.Shop.OnClientEvent:Connect(function(payload)
+	if payload.open == true then
+		shopPanel.Visible = true
+		shopGoldValue = payload.gold or shopGoldValue
+		shopGold.Text = "Золото: " .. tostring(shopGoldValue)
+	else
+		shopPanel.Visible = false
+		shopGoldValue = payload.gold or shopGoldValue
+	end
+end)
+
+local state = { weaponKind = "None", blocking = false, stamina = 100, staminaMax = 100, gold = 0 }
 local drawing = false
 local drawStarted = 0
 local recentX, recentY = 0, 0
@@ -276,6 +385,9 @@ RunService.RenderStepped:Connect(function()
 		healthFill.Size = UDim2.fromScale(health, 1)
 	end
 	staminaFill.Size = UDim2.fromScale(math.clamp(state.stamina / math.max(1, state.staminaMax), 0, 1), 1)
+	if shopPanel.Visible then
+		shopGold.Text = "Золото: " .. tostring(player:GetAttribute("Gold") or shopGoldValue)
+	end
 
 	if drawing then
 		local power = math.clamp((os.clock() - drawStarted - bowDrawMin) / math.max(0.01, bowDrawMax - bowDrawMin), 0, 1)

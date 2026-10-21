@@ -26,6 +26,7 @@ function Stats.get(player)
 			weapon = nil,
 			shield = false,
 			armor = {},
+			lastTrainReward = 0,
 		}
 		states[player] = state
 	end
@@ -184,6 +185,22 @@ function Stats.loop()
 	end
 end
 
+function Stats.getGold(player)
+	return player:GetAttribute("Gold") or 0
+end
+
+function Stats.setGold(player, amount)
+	player:SetAttribute("Gold", math.max(0, math.floor(amount + 0.5)))
+end
+
+function Stats.addGold(player, amount, reason)
+	Stats.setGold(player, Stats.getGold(player) + amount)
+	if amount > 0 then
+		ctx.net.Notice:FireClient(player, { text = "+" .. amount .. " золота (" .. (reason or "добыча") .. ")", kind = "good" })
+	end
+	ctx.net.Hud:FireClient(player, Stats.hudFor(player))
+end
+
 function Stats.hudFor(player)
 	local state = Stats.get(player)
 	local weaponName = "кулаки"
@@ -204,6 +221,7 @@ function Stats.hudFor(player)
 		shield = state.shield,
 		armor = ctx.arsenal.armorLabel(player),
 		blocking = state.blocking,
+		gold = Stats.getGold(player),
 	}
 end
 

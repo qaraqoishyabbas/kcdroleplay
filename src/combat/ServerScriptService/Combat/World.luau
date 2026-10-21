@@ -10,6 +10,8 @@ function World.init(config)
 	World.weaponPoints = {}
 	World.shieldPoint = nil
 	World.armorPoint = nil
+	World.vendorPoint = nil
+	World.trainingParts = {}
 	for _, item in yard:GetDescendants() do
 		if item:IsA("BasePart") then
 			local point = item:GetAttribute("CombatPoint")
@@ -19,6 +21,12 @@ function World.init(config)
 				World.shieldPoint = item
 			elseif point == "Armor" then
 				World.armorPoint = item
+			elseif point == "Vendor" then
+				World.vendorPoint = item
+			end
+			local parentName = item.Parent and item.Parent.Name or ""
+			if string.sub(parentName, 1, 6) == "Target" or string.sub(parentName, 1, 5) == "Dummy" or parentName == "Targets" then
+				table.insert(World.trainingParts, item)
 			end
 		end
 	end
@@ -38,6 +46,52 @@ end
 
 function World.attach(ctx)
 	World.prompts = {}
+
+	local function makeVendor(point)
+		local base = point.Position
+		local function piece(name, size, offset, color, shape)
+			local item = Instance.new("Part")
+			item.Name = name
+			item.Size = size
+			item.CFrame = CFrame.new(base + offset)
+			item.Color = color
+			item.Material = Enum.Material.SmoothPlastic
+			item.Anchored = true
+			item.CanCollide = false
+			item.CanQuery = false
+			item.CanTouch = false
+			item.Parent = point
+			if shape then
+				item.Shape = shape
+			end
+			return item
+		end
+		piece("Torso", Vector3.new(2.2, 2.4, 1.2), Vector3.new(0, 2.6, 0), Color3.fromRGB(74, 62, 48))
+		piece("Head", Vector3.new(1.5, 1.5, 1.5), Vector3.new(0, 4.5, 0), Color3.fromRGB(212, 180, 148), Enum.PartType.Ball)
+		piece("Hood", Vector3.new(1.9, 0.6, 1.9), Vector3.new(0, 5.1, 0), Color3.fromRGB(58, 48, 38))
+		local board = Instance.new("BillboardGui")
+		board.Size = UDim2.fromOffset(200, 40)
+		board.StudsOffset = Vector3.new(0, 3.4, 0)
+		board.AlwaysOnTop = true
+		board.Parent = point
+		local label = Instance.new("TextLabel")
+		label.Size = UDim2.fromScale(1, 1)
+		label.BackgroundTransparency = 1
+		label.Font = Enum.Font.GothamBold
+		label.TextScaled = true
+		label.TextColor3 = Color3.fromRGB(240, 224, 186)
+		label.Text = "ОРУЖЕЙНИК"
+		label.Parent = board
+	end
+
+	if World.vendorPoint then
+		makeVendor(World.vendorPoint)
+		local prompt = makePrompt(World.vendorPoint, "Торговать", "Оружейник", 12)
+		prompt.Triggered:Connect(function(player)
+			ctx.shop.open(player)
+		end)
+		table.insert(World.prompts, prompt)
+	end
 
 	for _, part in World.weaponPoints do
 		local weaponId = part:GetAttribute("WeaponId")

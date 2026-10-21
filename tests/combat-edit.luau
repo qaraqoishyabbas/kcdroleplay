@@ -11,7 +11,7 @@ local yard = assert(map:FindFirstChild("TrainingYard"), "TrainingYard missing: r
 check(yard:GetAttribute("BuildComplete") == true, "Yard is not finished")
 check(workspace:GetAttribute("HermesCombat") == true, "Project marker Workspace.HermesCombat is missing")
 
-local weaponPoints, shieldPoints, armorPoints, parts = 0, 0, 0, 0
+local weaponPoints, shieldPoints, armorPoints, vendorPoints, parts = 0, 0, 0, 0, 0
 for _, item in yard:GetDescendants() do
 	if item:IsA("BasePart") then
 		parts += 1
@@ -23,6 +23,8 @@ for _, item in yard:GetDescendants() do
 			shieldPoints += 1
 		elseif point == "Armor" then
 			armorPoints += 1
+		elseif point == "Vendor" then
+			vendorPoints += 1
 		end
 	end
 end
@@ -30,6 +32,7 @@ check(parts > 40, "Yard looks empty: " .. parts .. " parts")
 check(weaponPoints == 4, "Expected four weapon points, found " .. weaponPoints)
 check(shieldPoints == 1, "Expected one shield rack")
 check(armorPoints == 1, "Expected one armor stand")
+check(vendorPoints == 1, "Expected one weapon vendor")
 
 local targets = yard:FindFirstChild("Targets")
 check(targets ~= nil, "Targets folder missing")

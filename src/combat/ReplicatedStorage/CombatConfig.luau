@@ -4,7 +4,20 @@ local Config = {}
 Config.Version = "combat 1.0"
 Config.ModelName = "TrainingYard"
 
-Config.Player = { MaxHealth = 100, RespawnTime = 4 }
+Config.Player = { MaxHealth = 100, RespawnTime = 4, StartGold = 200 }
+
+Config.Gold = { DummyReward = 2, DummyCooldown = 0.4 }
+
+Config.Shop = {
+	{ Id = "Sword", Kind = "Weapon", Price = 40 },
+	{ Id = "Axe", Kind = "Weapon", Price = 70 },
+	{ Id = "Spear", Kind = "Weapon", Price = 35 },
+	{ Id = "Bow", Kind = "Weapon", Price = 55 },
+	{ Id = "Shield", Kind = "Shield", Price = 30 },
+	{ Id = "Helmet", Kind = "Armor", Price = 25 },
+	{ Id = "Cuirass", Kind = "Armor", Price = 60 },
+	{ Id = "Greaves", Kind = "Armor", Price = 20 },
+}
 
 Config.Movement = { Walk = 22 }
 

@@ -111,6 +111,23 @@ function Melee.resolve(player, weapon, direction)
 			break
 		end
 	end
+
+	-- Training hits pay a couple of coins, so the armoury has an income loop.
+	local now = workspace:GetServerTimeNow()
+	local state = ctx.stats.get(player)
+	if now - state.lastTrainReward >= ctx.config.Gold.DummyCooldown then
+		for _, target in ctx.world.trainingParts do
+			local delta = target.Position - root.Position
+			local flat = Vector3.new(delta.X, 0, delta.Z)
+			if flat.Magnitude > 0.1 and flat.Magnitude <= weapon.Reach + 1.5 and math.abs(delta.Y) <= 7 then
+				if forward:Dot(flat.Unit) >= cosHalf then
+					state.lastTrainReward = now
+					ctx.stats.addGold(player, ctx.config.Gold.DummyReward, "мишень")
+					break
+				end
+			end
+		end
+	end
 end
 
 return Melee

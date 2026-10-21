@@ -144,7 +144,33 @@ for index, spot in { { x = 0, z = -20 }, { x = 2, z = 14 } } do
 	head.Shape = Enum.PartType.Ball
 end
 
--- Sign over the entrance
+-- Vendor stall right next to the Crownford south gate spawn (200 studs west of the yard itself).
+local stallAt = Vector3.new(-196, 0, -6)
+part(props, "VendorCounter", Vector3.new(9, 3, 3), at(stallAt + Vector3.new(0, 1.5, 0)), wood)
+part(props, "VendorCanopy", Vector3.new(11, 0.4, 6), at(stallAt + Vector3.new(0, 5.4, 0)), cloth, Enum.Material.Fabric)
+for _, side in { -1, 1 } do
+	part(props, "VendorPost", Vector3.new(0.5, 5.5, 0.5), at(stallAt + Vector3.new(side * 5, 2.75, 2.6)), wood)
+end
+marker("VendorPoint", stallAt + Vector3.new(0, 1, 2), { CombatPoint = "Vendor" })
+
+-- Signpost at the spawn: where the training yard is.
+local post = part(props, "YardSignPost", Vector3.new(0.6, 7, 0.6), at(Vector3.new(-188, 3.5, 8)), wood)
+local board = part(props, "YardSign", Vector3.new(12, 2.4, 0.4), at(Vector3.new(-188, 7, 8)), wood)
+for _, face in { Enum.NormalId.Front, Enum.NormalId.Back } do
+	local gui = Instance.new("SurfaceGui")
+	gui.Face = face
+	gui.PixelsPerStud = 16
+	gui.Parent = board
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.fromScale(1, 1)
+	label.BackgroundTransparency = 1
+	label.Text = "ДВОР →"
+	label.TextScaled = true
+	label.Font = Enum.Font.Garamond
+	label.TextColor3 = Color3.fromRGB(238, 224, 190)
+	label.Parent = gui
+end
+
 local sign = part(structure, "Sign", Vector3.new(22, 3.5, 0.5), at(Vector3.new(0, 8.5, Z0 - 1)), wood)
 for _, face in { Enum.NormalId.Front, Enum.NormalId.Back } do
 	local gui = Instance.new("SurfaceGui")

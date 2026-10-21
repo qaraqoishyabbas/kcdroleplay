@@ -8,7 +8,7 @@ import json
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src" / "combat"
 TARGET = ROOT / "install-combat.luau"
-BUILD_ID = 1
+BUILD_ID = 2
 
 
 def quote(text: str) -> str:

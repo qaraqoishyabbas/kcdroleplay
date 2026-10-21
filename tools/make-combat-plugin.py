@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT / "build-combat.luau"
 INSTALL = ROOT / "install-combat.luau"
 TARGET = ROOT / "hermes-combat-plugin.rbxmx"
-BUILD_ID = 1  # must match BUILD_ID in tools/package-combat.py
+BUILD_ID = 2  # must match BUILD_ID in tools/package-combat.py
 
 HEADER = """-- Hermes: бой. Плагин сам собирает тренировочный двор и ставит систему боя.
 -- Источники встроены дословно из репозитория K:\\AI_Studio\\Hermes_roblox\\RPG.
@@ -31,6 +31,9 @@ local function installCombat()
 
 FOOTER = """
 end
+
+-- Must match BUILD_ID in tools/package-combat.py
+local BUILD_ID = 2
 
 local function currentBuild()
 	local config = game:GetService("ReplicatedStorage"):FindFirstChild("CombatConfig")
@@ -52,7 +55,17 @@ local function yardParts()
 end
 
 local function isCombatProject()
-	return workspace:GetAttribute("HermesCombat") == true
+	if workspace:GetAttribute("HermesCombat") == true then
+		return true
+	end
+	-- The RPG place is the Crownlands map without the school: that is enough to build here.
+	local map = workspace:FindFirstChild("Map")
+	if not map then
+		return false
+	end
+	local settlements = map:FindFirstChild("Settlements")
+	local crownford = settlements and settlements:FindFirstChild("Crownford")
+	return crownford ~= nil and map:FindFirstChild("School") == nil
 end
 
 local function verify()
