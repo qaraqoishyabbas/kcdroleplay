@@ -1,0 +1,47 @@
+[
+  {
+    "file": "ReplicatedStorage/CombatConfig.luau",
+    "path": "ReplicatedStorage/CombatConfig",
+    "class": "ModuleScript"
+  },
+  {
+    "file": "ReplicatedStorage/CombatNet.luau",
+    "path": "ReplicatedStorage/CombatNet",
+    "class": "ModuleScript"
+  },
+  {
+    "file": "ServerScriptService/Combat/Arrows.luau",
+    "path": "ServerScriptService/Combat/Arrows",
+    "class": "ModuleScript"
+  },
+  {
+    "file": "ServerScriptService/Combat/Arsenal.luau",
+    "path": "ServerScriptService/Combat/Arsenal",
+    "class": "ModuleScript"
+  },
+  {
+    "file": "ServerScriptService/Combat/Melee.luau",
+    "path": "ServerScriptService/Combat/Melee",
+    "class": "ModuleScript"
+  },
+  {
+    "file": "ServerScriptService/Combat/Stats.luau",
+    "path": "ServerScriptService/Combat/Stats",
+    "class": "ModuleScript"
+  },
+  {
+    "file": "ServerScriptService/Combat/World.luau",
+    "path": "ServerScriptService/Combat/World",
+    "class": "ModuleScript"
+  },
+  {
+    "file": "ServerScriptService/CombatBootstrap.server.luau",
+    "path": "ServerScriptService/CombatBootstrap",
+    "class": "Script"
+  },
+  {
+    "file": "StarterPlayer/StarterPlayerScripts/CombatClient.client.luau",
+    "path": "StarterPlayer/StarterPlayerScripts/CombatClient",
+    "class": "LocalScript"
+  }
+]

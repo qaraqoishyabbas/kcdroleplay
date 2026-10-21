@@ -1,0 +1,8 @@
+# Roblox Studio
+*.rbxl.lock
+*.rbxlx.lock
+*.rbxm.lock
+*.rbxmx.lock
+
+# Локальные файлы рабочего пространства Hermes
+_hermes/
