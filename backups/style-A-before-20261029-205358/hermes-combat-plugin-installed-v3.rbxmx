@@ -1,0 +1,2269 @@
+<?xml version='1.0' encoding='utf-8'?>
+<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4"><Item class="Script" referent="RBX1"><Properties><string name="Name">HermesCombatButton</string><ProtectedString name="Source">-- Hermes: бой. Плагин сам собирает тренировочный двор и ставит систему боя.
+-- Источники встроены дословно из репозитория K:\AI_Studio\Hermes_roblox\RPG.
+
+local toolbar = plugin:CreateToolbar("Hermes: бой")
+local button = toolbar:CreateButton("Бой + двор", "Собрать тренировочный двор и поставить боевую систему", "rbxassetid://14978048121", "Бой")
+button.ClickableWhenViewportHidden = true
+
+local function buildYard()
+	-- Edit-time builder: training yard with weapon racks, armor stand and archery targets.
+	-- Run in the Studio Command Bar with Play stopped, after build-map.luau.
+	assert(not game:GetService("RunService"):IsRunning(), "Stop Play first")
+
+	local W = workspace
+	local map = assert(W:FindFirstChild("Map"), "Map missing: run build-map.luau first")
+	local terrain = W.Terrain
+
+	local ORIGIN = Vector3.new(-1000, 0, -330)
+	local X0, X1 = -60, 60
+	local Z0, Z1 = -40, 40
+
+	local wood = Color3.fromRGB(104, 80, 54)
+	local dirt = Color3.fromRGB(126, 110, 80)
+	local stone = Color3.fromRGB(150, 144, 126)
+	local cloth = Color3.fromRGB(176, 168, 148)
+
+	local previous = map:FindFirstChild("TrainingYard")
+	if previous then
+		previous:Destroy()
+	end
+
+	local yard = Instance.new("Model")
+	yard.Name = "TrainingYard"
+	local structure = Instance.new("Folder") structure.Name = "Structure" structure.Parent = yard
+	local props = Instance.new("Folder") props.Name = "Props" props.Parent = yard
+	local targets = Instance.new("Folder") targets.Name = "Targets" targets.Parent = yard
+
+	local function part(parent, name, size, cframe, color, material, shape)
+		local item = Instance.new("Part")
+		item.Name = name
+		item.Size = size
+		item.CFrame = cframe
+		item.Color = color
+		item.Material = material or Enum.Material.WoodPlanks
+		item.Anchored = true
+		item.TopSurface = Enum.SurfaceType.Smooth
+		item.BottomSurface = Enum.SurfaceType.Smooth
+		item.Parent = parent
+		if shape then
+			item.Shape = shape
+		end
+		return item
+	end
+
+	local function at(localPosition, angle)
+		return CFrame.new(ORIGIN + localPosition) * CFrame.Angles(0, angle or 0, 0)
+	end
+
+	local function marker(name, localPosition, attributes)
+		local item = part(props, name, Vector3.one, at(localPosition), Color3.new(1, 1, 1), Enum.Material.SmoothPlastic)
+		item.Transparency = 1
+		item.CanCollide = false
+		item.CanTouch = false
+		item.CanQuery = false
+		if attributes then
+			for key, value in attributes do
+				item:SetAttribute(key, value)
+			end
+		end
+		return item
+	end
+
+	-- Ground: flatten the plot, lay a trampled dirt pad.
+	terrain:FillBlock(CFrame.new(ORIGIN + Vector3.new(0, 18, 0)), Vector3.new(X1 - X0 + 30, 36, Z1 - Z0 + 30), Enum.Material.Air)
+	terrain:FillBlock(CFrame.new(ORIGIN + Vector3.new(0, -5, 0)), Vector3.new(X1 - X0 + 30, 10, Z1 - Z0 + 30), Enum.Material.Ground)
+	local pad = part(structure, "Ground", Vector3.new(X1 - X0 + 8, 0.6, Z1 - Z0 + 8), at(Vector3.new(0, 0.3, 0)), dirt, Enum.Material.Ground)
+	yard.PrimaryPart = pad
+
+	-- Fence with an opening on the north side (towards Crownford).
+	local function fenceRun(name, fromLocal, toLocal)
+		local delta = toLocal - fromLocal
+		local length = delta.Magnitude
+		local middle = ORIGIN + (fromLocal + toLocal) / 2
+		local cframe = CFrame.lookAt(middle + Vector3.new(0, 3, 0), middle + Vector3.new(delta.X, 3, delta.Z))
+		part(structure, name .. "_Rail", Vector3.new(0.4, 0.8, length), cframe, wood)
+		local count = math.max(1, math.floor(length / 8))
+		for index = 0, count do
+			local point = fromLocal:Lerp(toLocal, index / count)
+			part(structure, name .. "_Post", Vector3.new(0.6, 6, 0.6), at(point + Vector3.new(0, 3, 0)), wood)
+		end
+	end
+
+	fenceRun("FenceWest", Vector3.new(X0, 0, Z0), Vector3.new(X0, 0, Z1))
+	fenceRun("FenceEast", Vector3.new(X1, 0, Z0), Vector3.new(X1, 0, Z1))
+	fenceRun("FenceSouth", Vector3.new(X0, 0, Z1), Vector3.new(X1, 0, Z1))
+	fenceRun("FenceNorthLeft", Vector3.new(X0, 0, Z0), Vector3.new(-12, 0, Z0))
+	fenceRun("FenceNorthRight", Vector3.new(12, 0, Z0), Vector3.new(X1, 0, Z0))
+
+	-- Weapon racks: two posts and a bar; the grey weapon models are added at runtime.
+	local rackSpots = {
+		{ z = -24, weapon = "Sword" },
+		{ z = -16, weapon = "Axe" },
+		{ z = 4, weapon = "Spear" },
+		{ z = 12, weapon = "Bow" },
+	}
+	for index, spot in rackSpots do
+		local postZ = spot.z - 3
+		part(props, "RackPost", Vector3.new(0.8, 6, 0.8), at(Vector3.new(-52, 3, postZ)), wood)
+		part(props, "RackPost", Vector3.new(0.8, 6, 0.8), at(Vector3.new(-52, 3, postZ + 6)), wood)
+		part(props, "RackBar", Vector3.new(0.6, 0.6, 7), at(Vector3.new(-52, 5.4, postZ + 3)), wood)
+		marker("WeaponPoint_" .. index, Vector3.new(-50, 3.4, spot.z), { CombatPoint = "Weapon", WeaponId = spot.weapon })
+	end
+
+	-- Shield rack
+	part(props, "ShieldPost", Vector3.new(0.8, 6, 0.8), at(Vector3.new(-52, 3, 18)), wood)
+	part(props, "ShieldBar", Vector3.new(0.6, 0.6, 5), at(Vector3.new(-52, 5.2, 20)), wood)
+	marker("ShieldPoint", Vector3.new(-50, 3.2, 20), { CombatPoint = "Shield" })
+
+	-- Armor stand
+	part(props, "ArmorPost", Vector3.new(0.7, 7, 0.7), at(Vector3.new(-52, 3.5, 30)), wood)
+	part(props, "ArmorCross", Vector3.new(0.5, 0.5, 4), at(Vector3.new(-52, 5.6, 30)), wood)
+	marker("ArmorPoint", Vector3.new(-50, 3, 30), { CombatPoint = "Armor" })
+
+	-- Archery targets on the east side: post plus a board with rings.
+	for index, z in { -26, 0, 26 } do
+		local targetFolder = Instance.new("Folder")
+		targetFolder.Name = "Target_" .. index
+		targetFolder.Parent = targets
+		part(targetFolder, "Post", Vector3.new(0.7, 6, 0.7), at(Vector3.new(48, 3, z)), wood)
+		local board = part(targetFolder, "Board", Vector3.new(0.5, 7, 7), at(Vector3.new(47.6, 6, z)), cloth, Enum.Material.Fabric)
+		board.Shape = Enum.PartType.Cylinder
+		board.CFrame = at(Vector3.new(47.6, 6, z)) * CFrame.Angles(0, 0, math.pi / 2)
+		for ring = 1, 3 do
+			local ringPart = part(targetFolder, "Ring", Vector3.new(0.2, 7 - ring * 1.6, 7 - ring * 1.6), at(Vector3.new(47.2, 6, z)), ring % 2 == 0 and Color3.fromRGB(196, 186, 160) or Color3.fromRGB(140, 60, 52), Enum.Material.Fabric)
+			ringPart.Shape = Enum.PartType.Cylinder
+			ringPart.CFrame = at(Vector3.new(47.2, 6, z)) * CFrame.Angles(0, 0, math.pi / 2)
+			ringPart.CanCollide = false
+		end
+	end
+
+	-- Shooting line
+	local line = part(structure, "ShootingLine", Vector3.new(1, 0.1, 40), at(Vector3.new(20, 0.65, 0)), Color3.fromRGB(226, 222, 208), Enum.Material.SmoothPlastic)
+	line.CanCollide = false
+
+	-- Training dummies
+	for index, spot in { { x = 0, z = -20 }, { x = 2, z = 14 } } do
+		local dummy = Instance.new("Folder")
+		dummy.Name = "Dummy_" .. index
+		dummy.Parent = props
+		part(dummy, "Post", Vector3.new(1, 6, 1), at(Vector3.new(spot.x, 3, spot.z)), wood)
+		part(dummy, "Crossbar", Vector3.new(6, 0.6, 0.6), at(Vector3.new(spot.x, 4.6, spot.z)), wood)
+		local head = part(dummy, "Head", Vector3.new(1.6, 1.6, 1.6), at(Vector3.new(spot.x, 6.4, spot.z)), stone, Enum.Material.SmoothPlastic)
+		head.Shape = Enum.PartType.Ball
+	end
+
+	-- Vendor stall right next to the Crownford south gate spawn (200 studs west of the yard itself).
+	local stallAt = Vector3.new(-196, 0, -6)
+	part(props, "VendorCounter", Vector3.new(9, 3, 3), at(stallAt + Vector3.new(0, 1.5, 0)), wood)
+	part(props, "VendorCanopy", Vector3.new(11, 0.4, 6), at(stallAt + Vector3.new(0, 5.4, 0)), cloth, Enum.Material.Fabric)
+	for _, side in { -1, 1 } do
+		part(props, "VendorPost", Vector3.new(0.5, 5.5, 0.5), at(stallAt + Vector3.new(side * 5, 2.75, 2.6)), wood)
+	end
+	marker("VendorPoint", stallAt + Vector3.new(0, 1, 2), { CombatPoint = "Vendor" })
+
+	-- Signpost at the spawn: where the training yard is.
+	local post = part(props, "YardSignPost", Vector3.new(0.6, 7, 0.6), at(Vector3.new(-188, 3.5, 8)), wood)
+	local board = part(props, "YardSign", Vector3.new(12, 2.4, 0.4), at(Vector3.new(-188, 7, 8)), wood)
+	for _, face in { Enum.NormalId.Front, Enum.NormalId.Back } do
+		local gui = Instance.new("SurfaceGui")
+		gui.Face = face
+		gui.PixelsPerStud = 16
+		gui.Parent = board
+		local label = Instance.new("TextLabel")
+		label.Size = UDim2.fromScale(1, 1)
+		label.BackgroundTransparency = 1
+		label.Text = "ДВОР →"
+		label.TextScaled = true
+		label.Font = Enum.Font.Garamond
+		label.TextColor3 = Color3.fromRGB(238, 224, 190)
+		label.Parent = gui
+	end
+
+	local sign = part(structure, "Sign", Vector3.new(22, 3.5, 0.5), at(Vector3.new(0, 8.5, Z0 - 1)), wood)
+	for _, face in { Enum.NormalId.Front, Enum.NormalId.Back } do
+		local gui = Instance.new("SurfaceGui")
+		gui.Face = face
+		gui.PixelsPerStud = 18
+		gui.Parent = sign
+		local label = Instance.new("TextLabel")
+		label.Size = UDim2.fromScale(1, 1)
+		label.BackgroundTransparency = 1
+		label.Text = "ТРЕНИРОВОЧНЫЙ ДВОР"
+		label.TextScaled = true
+		label.Font = Enum.Font.Garamond
+		label.TextColor3 = Color3.fromRGB(238, 224, 190)
+		label.Parent = gui
+	end
+
+	yard:SetAttribute("Origin", ORIGIN)
+	yard:SetAttribute("BuildComplete", true)
+	yard:SetAttribute("Kind", "TrainingYard")
+	yard.Parent = map
+
+	-- Project marker: the combat plugin only touches places with this attribute.
+	W:SetAttribute("HermesCombat", true)
+
+	local partCount = 0
+	for _, item in yard:GetDescendants() do
+		if item:IsA("BasePart") then
+			partCount += 1
+		end
+	end
+	print("COMBAT_YARD_OK", partCount, "parts", "origin", tostring(ORIGIN))
+end
+
+local function installCombat()
+	-- Generated by tools/package-combat.py. Run in the Studio Command Bar with Play stopped.
+	assert(not game:GetService("RunService"):IsRunning(),"Stop Play first")
+	local editor=game:GetService("ScriptEditorService")
+	local function ensure(parent,name,class)
+	local o=parent:FindFirstChild(name)
+	if o then assert(o.ClassName==class,"Class mismatch: "..o:GetFullName()) return o end
+	local n=Instance.new(class) n.Name=name n.Parent=parent return n end
+	local ServerScriptService=game:GetService("ServerScriptService")
+	local ReplicatedStorage=game:GetService("ReplicatedStorage")
+	local StarterPlayerScripts=game:GetService("StarterPlayer"):WaitForChild("StarterPlayerScripts")
+	-- remove the previous install so no stale script survives
+	for _,o in {ServerScriptService:FindFirstChild("CombatBootstrap"),ServerScriptService:FindFirstChild("Combat"),StarterPlayerScripts:FindFirstChild("CombatClient"),ReplicatedStorage:FindFirstChild("CombatConfig"),ReplicatedStorage:FindFirstChild("CombatNet"),ReplicatedStorage:FindFirstChild("CombatRemotes")} do
+	if o then o:Destroy() end end
+	do
+	local parent=ReplicatedStorage
+	local obj=ensure(parent,"CombatConfig","ModuleScript")
+	local source=[[-- Medieval combat tuning. All numbers live here; nothing else in the project hardcodes damage.
+	local Config = {}
+
+	Config.Version = "combat 1.0"
+	Config.ModelName = "TrainingYard"
+
+	Config.Player = { MaxHealth = 100, RespawnTime = 4, StartGold = 200 }
+
+	Config.Gold = { DummyReward = 2, DummyCooldown = 0.4 }
+
+	Config.Shop = {
+		{ Id = "Sword", Kind = "Weapon", Price = 40 },
+		{ Id = "Axe", Kind = "Weapon", Price = 70 },
+		{ Id = "Spear", Kind = "Weapon", Price = 35 },
+		{ Id = "Bow", Kind = "Weapon", Price = 55 },
+		{ Id = "Shield", Kind = "Shield", Price = 30 },
+		{ Id = "Helmet", Kind = "Armor", Price = 25 },
+		{ Id = "Cuirass", Kind = "Armor", Price = 60 },
+		{ Id = "Greaves", Kind = "Armor", Price = 20 },
+	}
+
+	Config.Movement = { Walk = 22 }
+
+	Config.Stamina = { Max = 100, Regen = 16, RegenDelay = 0.7, GuardBreak = 1.4 }
+
+	Config.Block = {
+		Arc = 110, -- degrees of the frontal block cone with a weapon
+		ShieldArc = 150, -- wider with a shield
+		StaminaPerHit = 10,
+		ShieldStaminaPerHit = 6,
+		MoveMultiplier = 0.55,
+	}
+
+	Config.Directions = {
+		Left = { Name = "слева", Damage = 1.0, Arc = 100, Windup = 0 },
+		Right = { Name = "справа", Damage = 1.0, Arc = 100, Windup = 0 },
+		Overhead = { Name = "сверху", Damage = 1.15, Arc = 70, Windup = 0.06 },
+		Stab = { Name = "укол", Damage = 1.15, Arc = 38, Windup = -0.04, ArmorPierce = 0.5 },
+	}
+
+	Config.Weapons = {
+		{
+			Id = "Sword", Name = "Короткий меч", Kind = "Melee",
+			Damage = 26, Windup = 0.22, Cooldown = 0.85, Reach = 4.4, Arc = 100, Stamina = 12,
+		},
+		{
+			Id = "Axe", Name = "Боевой топор", Kind = "Melee",
+			Damage = 36, Windup = 0.34, Cooldown = 1.15, Reach = 3.8, Arc = 90, Stamina = 18,
+		},
+		{
+			Id = "Spear", Name = "Копьё", Kind = "Melee",
+			Damage = 20, Windup = 0.18, Cooldown = 0.9, Reach = 6.4, Arc = 42, Stamina = 10,
+		},
+		{
+			Id = "Bow", Name = "Лук", Kind = "Bow",
+			DrawMin = 0.35, DrawMax = 1.2, DamageMin = 12, DamageMax = 40, SpeedMin = 110, SpeedMax = 175,
+		},
+		{ Id = "Shield", Name = "Щит", Kind = "Shield" },
+	}
+
+	Config.Arrow = { Lifetime = 6, Step = 0.04, Radius = 0.6, StickTime = 4 }
+
+	Config.Bow = { StaminaCost = 6, MinInterval = 0.35 }
+
+	Config.Armor = {
+		{
+			Id = "Helmet", Name = "Шлем", Reduction = 0.12, Part = "Head",
+			Size = Vector3.new(1.5, 1.2, 1.5), Offset = CFrame.new(0, 0.25, 0),
+		},
+		{
+			Id = "Cuirass", Name = "Кираса", Reduction = 0.22, Part = "UpperTorso",
+			Size = Vector3.new(2.3, 2.2, 1.3), Offset = CFrame.new(0, 0, 0),
+		},
+		{
+			Id = "Greaves", Name = "Поножи", Reduction = 0.1, Part = "LowerTorso",
+			Size = Vector3.new(2.1, 1.8, 1.2), Offset = CFrame.new(0, 0, 0),
+		},
+	}
+
+	Config.ArmorCap = 0.55
+
+	-- Grey placeholder look for every weapon and armor piece.
+	Config.Grey = {
+		Color = Color3.fromRGB(126, 130, 134),
+		Dark = Color3.fromRGB(92, 96, 100),
+		Material = Enum.Material.Metal,
+	}
+
+	Config.WeaponModels = {
+		Sword = {
+			{ Name = "Blade", Size = Vector3.new(0.18, 3.0, 0.55), Offset = CFrame.new(0, -1.9, 0), Color = "Grey" },
+			{ Name = "Guard", Size = Vector3.new(1.1, 0.16, 0.3), Offset = CFrame.new(0, -0.38, 0), Color = "Dark" },
+			{ Name = "Grip", Size = Vector3.new(0.22, 0.7, 0.22), Offset = CFrame.new(0, 0, 0), Color = "Dark" },
+		},
+		Axe = {
+			{ Name = "Shaft", Size = Vector3.new(0.22, 3.2, 0.22), Offset = CFrame.new(0, -1.5, 0), Color = "Dark" },
+			{ Name = "Head", Size = Vector3.new(0.2, 1.1, 1.3), Offset = CFrame.new(0, -2.6, 0.35), Color = "Grey" },
+		},
+		Spear = {
+			{ Name = "Shaft", Size = Vector3.new(0.16, 6.0, 0.16), Offset = CFrame.new(0, -3.0, 0), Color = "Dark" },
+			{ Name = "Tip", Size = Vector3.new(0.22, 0.9, 0.22), Offset = CFrame.new(0, -6.1, 0), Color = "Grey" },
+		},
+		Bow = {
+			{ Name = "LimbTop", Size = Vector3.new(0.16, 1.6, 0.16), Offset = CFrame.new(0, 0.7, 0.1) * CFrame.Angles(math.rad(-18), 0, 0), Color = "Dark" },
+			{ Name = "LimbBottom", Size = Vector3.new(0.16, 1.6, 0.16), Offset = CFrame.new(0, -0.7, 0.1) * CFrame.Angles(math.rad(18), 0, 0), Color = "Dark" },
+			{ Name = "Grip", Size = Vector3.new(0.24, 0.7, 0.24), Offset = CFrame.new(0, 0, 0.16), Color = "Grey" },
+		},
+		Shield = {
+			{ Name = "Board", Size = Vector3.new(0.18, 2.4, 1.6), Offset = CFrame.new(0, 0, 0.2), Color = "Grey" },
+			{ Name = "Boss", Size = Vector3.new(0.3, 0.7, 0.7), Offset = CFrame.new(0, 0, -0.1), Color = "Dark" },
+		},
+	}
+
+	return Config
+	]]
+	editor:UpdateSourceAsync(obj,function() return source end)
+	end
+	do
+	local parent=ReplicatedStorage
+	local obj=ensure(parent,"CombatNet","ModuleScript")
+	local source=[[-- Remote plumbing for the combat system.
+	local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+	local Net = {}
+	Net.FolderName = "CombatRemotes"
+	Net.Names = { "Attack", "Block", "DrawStart", "Release", "Hud", "Notice", "Shop", "Buy" }
+
+	function Net.server()
+		local folder = ReplicatedStorage:FindFirstChild(Net.FolderName)
+		if not folder then
+			folder = Instance.new("Folder")
+			folder.Name = Net.FolderName
+			folder.Parent = ReplicatedStorage
+		end
+		local remotes = {}
+		for _, name in Net.Names do
+			local remote = folder:FindFirstChild(name)
+			if not remote then
+				remote = Instance.new("RemoteEvent")
+				remote.Name = name
+				remote.Parent = folder
+			end
+			remotes[name] = remote
+		end
+		return remotes
+	end
+
+	function Net.client()
+		local folder = ReplicatedStorage:WaitForChild(Net.FolderName, 60)
+		assert(folder, "CombatRemotes не появились: серверный скрипт боя не запущен")
+		local remotes = {}
+		for _, name in Net.Names do
+			remotes[name] = folder:WaitForChild(name, 30)
+		end
+		return remotes
+	end
+
+	return Net
+	]]
+	editor:UpdateSourceAsync(obj,function() return source end)
+	end
+	do
+	local parent=ServerScriptService
+	parent=ensure(parent,"Combat","Folder")
+	local obj=ensure(parent,"Arrows","ModuleScript")
+	local source=[[-- Bows: draw time sets damage and speed; the arrow is a real projectile with gravity.
+	local Debris = game:GetService("Debris")
+	local Players = game:GetService("Players")
+
+	local Arrows = {}
+	local ctx = nil
+	local active = {}
+
+	function Arrows.init(context)
+		ctx = context
+		task.spawn(Arrows.loop)
+	end
+
+	function Arrows.drawStart(player)
+		local now = workspace:GetServerTimeNow()
+		local state = ctx.stats.get(player)
+		if not ctx.stats.canAct(player, now) then
+			return
+		end
+		local weapon = ctx.arsenal.weaponDefinition(state.weapon or "")
+		if not weapon or weapon.Kind ~= "Bow" then
+			return
+		end
+		ctx.stats.setBlocking(player, false)
+		state.drawStarted = now
+	end
+
+	function Arrows.release(player, aim)
+		local now = workspace:GetServerTimeNow()
+		local state = ctx.stats.get(player)
+		local weapon = ctx.arsenal.weaponDefinition(state.weapon or "")
+		if not weapon or weapon.Kind ~= "Bow" then
+			return
+		end
+		local held = state.drawStarted &gt; 0 and (now - state.drawStarted) or 0
+		state.drawStarted = 0
+		if held &lt; weapon.DrawMin then
+			ctx.net.Notice:FireClient(player, { text = "Лук не натянут", kind = "bad" })
+			return
+		end
+		if now - state.lastAttack &lt; ctx.config.Bow.MinInterval then
+			return
+		end
+		local character = player.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		local hand = character and (character:FindFirstChild("LeftHand") or character:FindFirstChild("Left Arm"))
+		if not root then
+			return
+		end
+		if not ctx.stats.spend(player, ctx.config.Bow.StaminaCost) then
+			ctx.net.Notice:FireClient(player, { text = "Не хватает сил на выстрел", kind = "bad" })
+			return
+		end
+		state.lastAttack = now
+
+		local power = math.clamp((held - weapon.DrawMin) / math.max(0.01, weapon.DrawMax - weapon.DrawMin), 0, 1)
+		local damage = weapon.DamageMin + (weapon.DamageMax - weapon.DamageMin) * power
+		local speed = weapon.SpeedMin + (weapon.SpeedMax - weapon.SpeedMin) * power
+
+		local direction = root.CFrame.LookVector
+		if typeof(aim) == "Vector3" and aim.Magnitude &gt; 0.1 then
+			direction = aim.Unit
+		end
+		if direction.Y &gt; 0.92 then
+			direction = (direction + Vector3.new(0, -0.45, 0)).Unit
+		end
+
+		local origin = (hand and hand.Position or root.Position + Vector3.new(0, 1, 0)) + direction * 1.4
+		local arrow = Instance.new("Part")
+		arrow.Name = "Arrow"
+		arrow.Size = Vector3.new(0.12, 0.12, 1.9)
+		arrow.CFrame = CFrame.lookAt(origin, origin + direction)
+		arrow.Color = ctx.config.Grey.Dark
+		arrow.Material = Enum.Material.Metal
+		arrow.Anchored = false
+		arrow.CanCollide = false
+		arrow.CanTouch = false
+		arrow.CanQuery = false
+		arrow.Massless = false
+		arrow.Parent = workspace
+		arrow.AssemblyLinearVelocity = direction * speed
+
+		table.insert(active, {
+			part = arrow,
+			owner = player,
+			damage = damage,
+			expire = now + ctx.config.Arrow.Lifetime,
+		})
+	end
+
+	function Arrows.loop()
+		while true do
+			task.wait(ctx.config.Arrow.Step)
+			local now = workspace:GetServerTimeNow()
+			for index = #active, 1, -1 do
+				local record = active[index]
+				local arrow = record.part
+				local dead = arrow == nil or arrow.Parent == nil or now &gt; record.expire or arrow.Position.Y &lt; -60
+				if dead then
+					if arrow then
+						arrow:Destroy()
+					end
+					table.remove(active, index)
+				else
+					local step = arrow.AssemblyLinearVelocity * ctx.config.Arrow.Step
+					if step.Magnitude &gt; 0.05 then
+						local params = RaycastParams.new()
+						params.FilterType = Enum.RaycastFilterType.Exclude
+						local exclude = { arrow }
+						local ownerCharacter = record.owner and record.owner.Character
+						if ownerCharacter then
+							table.insert(exclude, ownerCharacter)
+						end
+						params.FilterDescendantsInstances = exclude
+						local hit = workspace:Raycast(arrow.Position, step, params)
+						if hit then
+							local hitModel = hit.Instance and hit.Instance:FindFirstAncestorOfClass("Model")
+							local target = hitModel and Players:GetPlayerFromCharacter(hitModel) or nil
+							if target and target ~= record.owner then
+								ctx.stats.damage(target, record.damage, record.owner, "стрела", 0.15)
+							end
+							arrow.AssemblyLinearVelocity = Vector3.zero
+							arrow.Anchored = true
+							Debris:AddItem(arrow, ctx.config.Arrow.StickTime)
+							table.remove(active, index)
+						end
+					end
+				end
+			end
+		end
+	end
+
+	function Arrows.count()
+		return #active
+	end
+
+	return Arrows
+	]]
+	editor:UpdateSourceAsync(obj,function() return source end)
+	end
+	do
+	local parent=ServerScriptService
+	parent=ensure(parent,"Combat","Folder")
+	local obj=ensure(parent,"Arsenal","ModuleScript")
+	local source=[[-- Grey placeholder weapons, shields and armor welded straight onto the character.
+	-- No Tool instances: the server owns what a player holds, so the client cannot fake a weapon.
+	local Arsenal = {}
+	local ctx = nil
+
+	local function makePart(parent, name, size, cframe, color, material)
+		local item = Instance.new("Part")
+		item.Name = name
+		item.Size = size
+		item.CFrame = cframe
+		item.Color = color
+		item.Material = material or ctx.config.Grey.Material
+		item.Anchored = false
+		item.CanCollide = false
+		item.CanTouch = false
+		item.CanQuery = false
+		item.Massless = true
+		item.TopSurface = Enum.SurfaceType.Smooth
+		item.BottomSurface = Enum.SurfaceType.Smooth
+		item.Parent = parent
+		return item
+	end
+
+	local function handOf(character, side)
+		if not character then
+			return nil
+		end
+		if side == "left" then
+			return character:FindFirstChild("LeftHand") or character:FindFirstChild("Left Arm")
+		end
+		return character:FindFirstChild("RightHand") or character:FindFirstChild("Right Arm")
+	end
+
+	function Arsenal.init(context)
+		ctx = context
+	end
+
+	function Arsenal.weaponDefinition(weaponId)
+		for _, weapon in ctx.config.Weapons do
+			if weapon.Id == weaponId then
+				return weapon
+			end
+		end
+		return nil
+	end
+
+	local function weldTo(part, base, cframe)
+		local joint = Instance.new("WeldConstraint")
+		joint.Part0 = base
+		joint.Part1 = part
+		joint.Parent = part
+		part.CFrame = base.CFrame * cframe
+		return joint
+	end
+
+	-- Builds the grey model of a weapon and welds it into the right hand.
+	local function mountModel(character, modelName, weaponId, side, grip)
+		local hand = handOf(character, side)
+		if not hand then
+			return nil
+		end
+		local specs = ctx.config.WeaponModels[weaponId]
+		if not specs then
+			return nil
+		end
+		local model = Instance.new("Model")
+		model.Name = modelName
+		local base = nil
+		for index, spec in specs do
+			local color = spec.Color == "Dark" and ctx.config.Grey.Dark or ctx.config.Grey.Color
+			local item = makePart(model, spec.Name, spec.Size, CFrame.new() * spec.Offset, color)
+			if index == 1 then
+				base = item
+			end
+		end
+		if not base then
+			model:Destroy()
+			return nil
+		end
+		for _, item in model:GetChildren() do
+			if item ~= base and item:IsA("BasePart") then
+				weldTo(item, base, CFrame.new())
+			end
+		end
+		model.Parent = character
+		base.CFrame = hand.CFrame * (grip or CFrame.Angles(math.rad(75), 0, 0))
+		weldTo(base, hand, grip or CFrame.Angles(math.rad(75), 0, 0))
+		model.PrimaryPart = base
+		return model
+	end
+
+	local GRIP = {
+		Sword = CFrame.new(0, -0.1, 0) * CFrame.Angles(math.rad(70), 0, 0),
+		Axe = CFrame.new(0, -0.1, 0) * CFrame.Angles(math.rad(70), 0, 0),
+		Spear = CFrame.new(0, 0, 0) * CFrame.Angles(math.rad(80), 0, 0),
+		Bow = CFrame.new(0, 0, 0) * CFrame.Angles(0, math.rad(90), 0),
+		Shield = CFrame.new(0, 0, 0) * CFrame.Angles(0, math.rad(90), 0),
+	}
+
+	function Arsenal.setWeapon(player, weaponId)
+		local state = ctx.stats.get(player)
+		local character = player.Character
+		if not character then
+			return false
+		end
+		Arsenal.clearWeapon(player)
+		local definition = Arsenal.weaponDefinition(weaponId)
+		if not definition then
+			return false
+		end
+		local model = mountModel(character, "Weapon_" .. weaponId, weaponId, "right", GRIP[weaponId])
+		if not model then
+			return false
+		end
+		state.weapon = weaponId
+		ctx.net.Hud:FireClient(player, ctx.stats.hudFor(player))
+		return true
+	end
+
+	function Arsenal.clearWeapon(player)
+		local state = ctx.stats.get(player)
+		state.weapon = nil
+		local character = player.Character
+		if not character then
+			return
+		end
+		for _, item in character:GetChildren() do
+			if item:IsA("Model") and string.sub(item.Name, 1, 7) == "Weapon_" then
+				item:Destroy()
+			end
+		end
+	end
+
+	function Arsenal.setShield(player, on)
+		local state = ctx.stats.get(player)
+		local character = player.Character
+		if not character then
+			return false
+		end
+		for _, item in character:GetChildren() do
+			if item:IsA("Model") and item.Name == "Weapon_Shield" then
+				item:Destroy()
+			end
+		end
+		state.shield = false
+		if not on then
+			ctx.net.Hud:FireClient(player, ctx.stats.hudFor(player))
+			return true
+		end
+		local model = mountModel(character, "Weapon_Shield", "Shield", "left", GRIP.Shield)
+		if not model then
+			return false
+		end
+		state.shield = true
+		ctx.net.Hud:FireClient(player, ctx.stats.hudFor(player))
+		return true
+	end
+
+	function Arsenal.wear(player, armorId)
+		local state = ctx.stats.get(player)
+		local character = player.Character
+		if not character then
+			return false
+		end
+		local definition = nil
+		for _, piece in ctx.config.Armor do
+			if piece.Id == armorId then
+				definition = piece
+			end
+		end
+		if not definition then
+			return false
+		end
+		Arsenal.remove(player, armorId)
+		local anchor = character:FindFirstChild(definition.Part)
+		if not anchor then
+			return false
+		end
+		local item = makePart(character, "Armor_" .. armorId, definition.Size, anchor.CFrame * definition.Offset, ctx.config.Grey.Color)
+		weldTo(item, anchor, definition.Offset)
+		state.armor[armorId] = true
+		ctx.net.Hud:FireClient(player, ctx.stats.hudFor(player))
+		return true
+	end
+
+	function Arsenal.remove(player, armorId)
+		local state = ctx.stats.get(player)
+		state.armor[armorId] = nil
+		local character = player.Character
+		if character then
+			local item = character:FindFirstChild("Armor_" .. armorId)
+			if item then
+				item:Destroy()
+			end
+		end
+		ctx.net.Hud:FireClient(player, ctx.stats.hudFor(player))
+		return true
+	end
+
+	function Arsenal.wearAll(player)
+		for _, piece in ctx.config.Armor do
+			Arsenal.wear(player, piece.Id)
+		end
+	end
+
+	function Arsenal.stripAll(player)
+		for _, piece in ctx.config.Armor do
+			Arsenal.remove(player, piece.Id)
+		end
+	end
+
+	function Arsenal.armorLabel(player)
+		local state = ctx.stats.get(player)
+		local names = {}
+		for _, piece in ctx.config.Armor do
+			if state.armor[piece.Id] then
+				table.insert(names, piece.Name)
+			end
+		end
+		if #names == 0 then
+			return "нет"
+		end
+		return table.concat(names, ", ")
+	end
+
+	function Arsenal.reduction(player)
+		local state = ctx.stats.get(player)
+		local multiplier = 1
+		for _, piece in ctx.config.Armor do
+			if state.armor[piece.Id] then
+				multiplier = multiplier * (1 - piece.Reduction)
+			end
+		end
+		return math.min(ctx.config.ArmorCap, 1 - multiplier)
+	end
+
+	function Arsenal.reapply(player)
+		task.spawn(function()
+			local character = player.Character
+			if not character then
+				return
+			end
+			-- Hands appear a moment after CharacterAdded; wait for them before welding.
+			character:WaitForChild("RightHand", 5)
+			character:WaitForChild("LeftHand", 5)
+			local state = ctx.stats.get(player)
+			if state.weapon then
+				local weaponId = state.weapon
+				state.weapon = nil
+				Arsenal.setWeapon(player, weaponId)
+			end
+			if state.shield then
+				state.shield = false
+				Arsenal.setShield(player, true)
+			end
+			for _, piece in ctx.config.Armor do
+				if state.armor[piece.Id] then
+					state.armor[piece.Id] = nil
+					Arsenal.wear(player, piece.Id)
+				end
+			end
+		end)
+	end
+
+	function Arsenal.clearAll(player)
+		local state = ctx.stats.get(player)
+		state.weapon = nil
+		state.shield = false
+		table.clear(state.armor)
+		local character = player.Character
+		if character then
+			for _, item in character:GetChildren() do
+				if item:IsA("Model") and string.sub(item.Name, 1, 7) == "Weapon_" then
+					item:Destroy()
+				elseif item:IsA("BasePart") and string.sub(item.Name, 1, 6) == "Armor_" then
+					item:Destroy()
+				end
+			end
+		end
+	end
+
+	-- Grey display models on the racks: anchored copies, no collision, no queries.
+	function Arsenal.spawnDisplay(anchor, weaponId)
+		local specs = ctx.config.WeaponModels[weaponId]
+		if not specs then
+			return
+		end
+		for _, spec in specs do
+			local color = spec.Color == "Dark" and ctx.config.Grey.Dark or ctx.config.Grey.Color
+			local item = Instance.new("Part")
+			item.Name = "Display_" .. spec.Name
+			item.Size = spec.Size
+			item.CFrame = anchor.CFrame * CFrame.new(0, 1.2, 0) * spec.Offset
+			item.Color = color
+			item.Material = ctx.config.Grey.Material
+			item.Anchored = true
+			item.CanCollide = false
+			item.CanQuery = false
+			item.CanTouch = false
+			item.Parent = anchor
+		end
+	end
+
+	function Arsenal.spawnArmorDisplay(anchor)
+		local heights = { Helmet = 4.6, Cuirass = 3.0, Greaves = 1.6 }
+		for _, piece in ctx.config.Armor do
+			local item = Instance.new("Part")
+			item.Name = "Display_" .. piece.Id
+			item.Size = piece.Size
+			item.CFrame = anchor.CFrame * CFrame.new(0, heights[piece.Id] or 2, 0) * piece.Offset
+			item.Color = ctx.config.Grey.Color
+			item.Material = ctx.config.Grey.Material
+			item.Anchored = true
+			item.CanCollide = false
+			item.CanQuery = false
+			item.CanTouch = false
+			item.Parent = anchor
+		end
+	end
+
+	return Arsenal
+	]]
+	editor:UpdateSourceAsync(obj,function() return source end)
+	end
+	do
+	local parent=ServerScriptService
+	parent=ensure(parent,"Combat","Folder")
+	local obj=ensure(parent,"Melee","ModuleScript")
+	local source=[[-- Melee: four attack directions, arc + line-of-sight hit test, server authoritative.
+	local Debris = game:GetService("Debris")
+	local Players = game:GetService("Players")
+
+	local Melee = {}
+	local ctx = nil
+
+	function Melee.init(context)
+		ctx = context
+	end
+
+	local function flatLook(root)
+		local look = root.CFrame.LookVector
+		local flat = Vector3.new(look.X, 0, look.Z)
+		if flat.Magnitude &lt; 0.05 then
+			return Vector3.new(0, 0, -1)
+		end
+		return flat.Unit
+	end
+
+	local function slashVisual(character, directionName, weapon)
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		if not root then
+			return
+		end
+		local forward = flatLook(root)
+		local centre = root.Position + Vector3.new(0, 1.4, 0) + forward * (weapon.Reach * 0.45)
+		local size = Vector3.new(0.3, 2.2, weapon.Reach * 0.8)
+		if directionName == "Stab" then
+			size = Vector3.new(0.2, 0.2, weapon.Reach * 0.9)
+		elseif directionName == "Overhead" then
+			size = Vector3.new(1.6, 2.6, 0.4)
+		end
+		local part = Instance.new("Part")
+		part.Name = "Slash"
+		part.Size = size
+		part.CFrame = CFrame.lookAt(centre, centre + forward)
+		part.Anchored = true
+		part.CanCollide = false
+		part.CanQuery = false
+		part.CanTouch = false
+		part.Material = Enum.Material.SmoothPlastic
+		part.Color = Color3.fromRGB(232, 234, 236)
+		part.Transparency = 0.6
+		part.Parent = workspace
+		Debris:AddItem(part, 0.18)
+	end
+
+	function Melee.attack(player, directionName)
+		local now = workspace:GetServerTimeNow()
+		local state = ctx.stats.get(player)
+		if not ctx.stats.canAct(player, now) then
+			return
+		end
+		local weapon = ctx.arsenal.weaponDefinition(state.weapon or "")
+		if not weapon or weapon.Kind ~= "Melee" then
+			ctx.net.Notice:FireClient(player, { text = "Возьми оружие ближнего боя", kind = "bad" })
+			return
+		end
+		if now - state.lastAttack &lt; weapon.Cooldown then
+			return
+		end
+		if not ctx.stats.spend(player, weapon.Stamina) then
+			ctx.net.Notice:FireClient(player, { text = "Не хватает сил на удар", kind = "bad" })
+			return
+		end
+		state.lastAttack = now
+		local direction = ctx.config.Directions[directionName] or ctx.config.Directions.Right
+		local character = player.Character
+		slashVisual(character, directionName, weapon)
+		task.delay(math.max(0.05, weapon.Windup + (direction.Windup or 0)), function()
+			Melee.resolve(player, weapon, direction)
+		end)
+	end
+
+	function Melee.resolve(player, weapon, direction)
+		local character = player.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if not root or not humanoid or humanoid.Health &lt;= 0 then
+			return
+		end
+		local forward = flatLook(root)
+		local arc = math.min(weapon.Arc, direction.Arc or weapon.Arc)
+		local cosHalf = math.cos(math.rad(arc * 0.5))
+		local hits = 0
+
+		for _, other in Players:GetPlayers() do
+			if other ~= player then
+				local otherCharacter = other.Character
+				local otherRoot = otherCharacter and otherCharacter:FindFirstChild("HumanoidRootPart")
+				if otherRoot then
+					local delta = otherRoot.Position - root.Position
+					local flat = Vector3.new(delta.X, 0, delta.Z)
+					if flat.Magnitude &gt; 0.1 and flat.Magnitude &lt;= weapon.Reach and math.abs(delta.Y) &lt;= 5 then
+						if forward:Dot(flat.Unit) &gt;= cosHalf then
+							local params = RaycastParams.new()
+							params.FilterType = Enum.RaycastFilterType.Exclude
+							params.FilterDescendantsInstances = { character, otherCharacter }
+							local wall = workspace:Raycast(root.Position + Vector3.new(0, 1.5, 0), flat.Unit * (flat.Magnitude - 1), params)
+							if not wall then
+								local falloff = 1 - math.clamp(flat.Magnitude / weapon.Reach, 0, 1) * 0.2
+								ctx.stats.damage(other, weapon.Damage * (direction.Damage or 1) * falloff, player, weapon.Name, direction.ArmorPierce or 0)
+								hits += 1
+							end
+						end
+					end
+				end
+			end
+			if hits &gt;= 2 then
+				break
+			end
+		end
+
+		-- Training hits pay a couple of coins, so the armoury has an income loop.
+		local now = workspace:GetServerTimeNow()
+		local state = ctx.stats.get(player)
+		if now - state.lastTrainReward &gt;= ctx.config.Gold.DummyCooldown then
+			for _, target in ctx.world.trainingParts do
+				local delta = target.Position - root.Position
+				local flat = Vector3.new(delta.X, 0, delta.Z)
+				if flat.Magnitude &gt; 0.1 and flat.Magnitude &lt;= weapon.Reach + 1.5 and math.abs(delta.Y) &lt;= 7 then
+					if forward:Dot(flat.Unit) &gt;= cosHalf then
+						state.lastTrainReward = now
+						ctx.stats.addGold(player, ctx.config.Gold.DummyReward, "мишень")
+						break
+					end
+				end
+			end
+		end
+	end
+
+	return Melee
+	]]
+	editor:UpdateSourceAsync(obj,function() return source end)
+	end
+	do
+	local parent=ServerScriptService
+	parent=ensure(parent,"Combat","Folder")
+	local obj=ensure(parent,"Shop","ModuleScript")
+	local source=[[-- Weapon seller: a fixed catalog with prices, gold is a player attribute.
+	local Shop = {}
+	local ctx = nil
+
+	function Shop.init(context)
+		ctx = context
+	end
+
+	function Shop.catalog()
+		return ctx.config.Shop
+	end
+
+	function Shop.entry(itemId)
+		for _, item in ctx.config.Shop do
+			if item.Id == itemId then
+				return item
+			end
+		end
+		return nil
+	end
+
+	function Shop.displayName(itemId)
+		for _, weapon in ctx.config.Weapons do
+			if weapon.Id == itemId then
+				return weapon.Name
+			end
+		end
+		for _, piece in ctx.config.Armor do
+			if piece.Id == itemId then
+				return piece.Name
+			end
+		end
+		return itemId
+	end
+
+	function Shop.open(player)
+		ctx.net.Shop:FireClient(player, {
+			open = true,
+			gold = ctx.stats.getGold(player),
+		})
+	end
+
+	function Shop.close(player)
+		ctx.net.Shop:FireClient(player, { open = false, gold = ctx.stats.getGold(player) })
+	end
+
+	function Shop.buy(player, itemId)
+		if type(itemId) ~= "string" then
+			return
+		end
+		local item = Shop.entry(itemId)
+		if not item then
+			ctx.net.Notice:FireClient(player, { text = "Такого товара нет", kind = "bad" })
+			return
+		end
+		local character = player.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if not humanoid or humanoid.Health &lt;= 0 then
+			ctx.net.Notice:FireClient(player, { text = "Сначала вернись в бой", kind = "bad" })
+			return
+		end
+		local gold = ctx.stats.getGold(player)
+		if gold &lt; item.Price then
+			ctx.net.Notice:FireClient(player, { text = "Не хватает " .. (item.Price - gold) .. " золота", kind = "bad" })
+			return
+		end
+		local ok = false
+		if item.Kind == "Weapon" then
+			ok = ctx.arsenal.setWeapon(player, item.Id)
+		elseif item.Kind == "Shield" then
+			ok = ctx.arsenal.setShield(player, true)
+		elseif item.Kind == "Armor" then
+			ok = ctx.arsenal.wear(player, item.Id)
+		end
+		if not ok then
+			ctx.net.Notice:FireClient(player, { text = "Не удалось выдать предмет", kind = "bad" })
+			return
+		end
+		ctx.stats.setGold(player, gold - item.Price)
+		ctx.net.Notice:FireClient(player, { text = "Куплено: " .. Shop.displayName(item.Id) .. " за " .. item.Price, kind = "good" })
+		ctx.net.Hud:FireClient(player, ctx.stats.hudFor(player))
+		ctx.net.Shop:FireClient(player, { open = true, gold = ctx.stats.getGold(player) })
+	end
+
+	return Shop
+	]]
+	editor:UpdateSourceAsync(obj,function() return source end)
+	end
+	do
+	local parent=ServerScriptService
+	parent=ensure(parent,"Combat","Folder")
+	local obj=ensure(parent,"Stats","ModuleScript")
+	local source=[[-- Per-player combat state: stamina, blocking, stagger, equipment, damage application.
+	local Players = game:GetService("Players")
+
+	local Stats = {}
+	local ctx = nil
+	local states = {}
+
+	function Stats.init(context)
+		ctx = context
+		Players.PlayerRemoving:Connect(function(player)
+			states[player] = nil
+		end)
+		task.spawn(Stats.loop)
+	end
+
+	function Stats.get(player)
+		local state = states[player]
+		if not state then
+			state = {
+				stamina = ctx.config.Stamina.Max,
+				blocking = false,
+				staggeredUntil = 0,
+				lastAttack = 0,
+				lastStaminaUse = 0,
+				drawStarted = 0,
+				weapon = nil,
+				shield = false,
+				armor = {},
+				lastTrainReward = 0,
+			}
+			states[player] = state
+		end
+		return state
+	end
+
+	function Stats.all()
+		return states
+	end
+
+	function Stats.reset(player)
+		local state = Stats.get(player)
+		state.stamina = ctx.config.Stamina.Max
+		state.blocking = false
+		state.staggeredUntil = 0
+		state.lastAttack = 0
+		state.drawStarted = 0
+	end
+
+	function Stats.canAct(player, now)
+		local state = Stats.get(player)
+		return now &gt;= state.staggeredUntil
+	end
+
+	function Stats.setStagger(player, seconds, now)
+		local state = Stats.get(player)
+		local until_ = (now or workspace:GetServerTimeNow()) + seconds
+		if until_ &gt; state.staggeredUntil then
+			state.staggeredUntil = until_
+		end
+		local character = player.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			humanoid.WalkSpeed = 8
+		end
+		task.delay(seconds, function()
+			local current = states[player]
+			if current and (current.staggeredUntil &lt;= workspace:GetServerTimeNow()) then
+				local char = player.Character
+				local hum = char and char:FindFirstChildOfClass("Humanoid")
+				if hum then
+					hum.WalkSpeed = ctx.config.Movement.Walk
+				end
+			end
+		end)
+	end
+
+	function Stats.spend(player, amount)
+		local state = Stats.get(player)
+		local now = workspace:GetServerTimeNow()
+		if state.stamina &lt; amount then
+			return false
+		end
+		state.stamina = state.stamina - amount
+		state.lastStaminaUse = now
+		return true
+	end
+
+	function Stats.setBlocking(player, on)
+		local state = Stats.get(player)
+		state.blocking = on and true or false
+		local now = workspace:GetServerTimeNow()
+		if now &lt; state.staggeredUntil then
+			return
+		end
+		local character = player.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			local baseSpeed = ctx.config.Movement.Walk
+			if state.blocking then
+				humanoid.WalkSpeed = baseSpeed * ctx.config.Block.MoveMultiplier
+			else
+				humanoid.WalkSpeed = baseSpeed
+			end
+		end
+	end
+
+	local function rootOf(player)
+		local character = player.Character
+		return character and character:FindFirstChild("HumanoidRootPart") or nil
+	end
+
+	function Stats.damage(target, amount, attacker, kind, armorPierce)
+		if not target or not target.Parent then
+			return 0
+		end
+		local targetCharacter = target.Character
+		local humanoid = targetCharacter and targetCharacter:FindFirstChildOfClass("Humanoid")
+		if not humanoid or humanoid.Health &lt;= 0 then
+			return 0
+		end
+		local state = Stats.get(target)
+		local now = workspace:GetServerTimeNow()
+
+		if state.blocking then
+			local targetRoot = rootOf(target)
+			local attackerRoot = attacker and rootOf(attacker)
+			local blocked = false
+			if targetRoot and attackerRoot then
+				local delta = attackerRoot.Position - targetRoot.Position
+				local flat = Vector3.new(delta.X, 0, delta.Z)
+				local look = targetRoot.CFrame.LookVector
+				local forward = Vector3.new(look.X, 0, look.Z)
+				if flat.Magnitude &gt; 0.1 and forward.Magnitude &gt; 0.1 then
+					local arc = state.shield and ctx.config.Block.ShieldArc or ctx.config.Block.Arc
+					blocked = forward.Unit:Dot(flat.Unit) &gt;= math.cos(math.rad(arc * 0.5))
+				end
+			end
+			if blocked then
+				local cost = state.shield and ctx.config.Block.ShieldStaminaPerHit or ctx.config.Block.StaminaPerHit
+				if Stats.spend(target, cost) then
+					ctx.net.Notice:FireClient(target, { text = "Блок", kind = "good" })
+					if attacker then
+						ctx.net.Notice:FireClient(attacker, { text = "Удар в блок", kind = "bad" })
+					end
+					return 0
+				end
+				Stats.setStagger(target, ctx.config.Stamina.GuardBreak, now)
+				ctx.net.Notice:FireClient(target, { text = "Блок пробит: нет сил", kind = "bad" })
+			end
+		end
+
+		local reduction = ctx.arsenal.reduction(target)
+		if armorPierce and armorPierce &gt; 0 then
+			reduction = reduction * (1 - armorPierce)
+		end
+		local final = math.max(1, math.floor(amount * (1 - reduction) + 0.5))
+		humanoid:TakeDamage(final)
+
+		ctx.net.Notice:FireClient(target, { text = "Ты получил " .. final .. " (" .. (kind or "удар") .. ")", kind = "bad" })
+		if attacker and attacker ~= target then
+			ctx.net.Notice:FireClient(attacker, { text = "Ты нанёс " .. final, kind = "good" })
+		end
+		if humanoid.Health &lt;= 0 then
+			Stats.reset(target)
+		end
+		return final
+	end
+
+	function Stats.loop()
+		while true do
+			task.wait(0.2)
+			local now = workspace:GetServerTimeNow()
+			for player, state in states do
+				if player.Parent then
+					if now - state.lastStaminaUse &gt; ctx.config.Stamina.RegenDelay then
+						state.stamina = math.min(ctx.config.Stamina.Max, state.stamina + ctx.config.Stamina.Regen * 0.2)
+					end
+					if state.blocking and state.stamina &lt;= 0 then
+						state.blocking = false
+						Stats.setStagger(player, 0.8, now)
+						ctx.net.Notice:FireClient(player, { text = "Ты выдохлась — блок снят", kind = "bad" })
+					end
+				end
+			end
+		end
+	end
+
+	function Stats.getGold(player)
+		return player:GetAttribute("Gold") or 0
+	end
+
+	function Stats.setGold(player, amount)
+		player:SetAttribute("Gold", math.max(0, math.floor(amount + 0.5)))
+	end
+
+	function Stats.addGold(player, amount, reason)
+		Stats.setGold(player, Stats.getGold(player) + amount)
+		if amount &gt; 0 then
+			ctx.net.Notice:FireClient(player, { text = "+" .. amount .. " золота (" .. (reason or "добыча") .. ")", kind = "good" })
+		end
+		ctx.net.Hud:FireClient(player, Stats.hudFor(player))
+	end
+
+	function Stats.hudFor(player)
+		local state = Stats.get(player)
+		local weaponName = "кулаки"
+		local weaponKind = "None"
+		if state.weapon then
+			for _, weapon in ctx.config.Weapons do
+				if weapon.Id == state.weapon then
+					weaponName = weapon.Name
+					weaponKind = weapon.Kind
+				end
+			end
+		end
+		return {
+			stamina = math.floor(state.stamina + 0.5),
+			staminaMax = ctx.config.Stamina.Max,
+			weapon = weaponName,
+			weaponKind = weaponKind,
+			shield = state.shield,
+			armor = ctx.arsenal.armorLabel(player),
+			blocking = state.blocking,
+			gold = Stats.getGold(player),
+		}
+	end
+
+	function Stats.broadcast()
+		for player in states do
+			if player.Parent then
+				ctx.net.Hud:FireClient(player, Stats.hudFor(player))
+			end
+		end
+	end
+
+	return Stats
+	]]
+	editor:UpdateSourceAsync(obj,function() return source end)
+	end
+	do
+	local parent=ServerScriptService
+	parent=ensure(parent,"Combat","Folder")
+	local obj=ensure(parent,"Vendor","ModuleScript")
+	local source=[[-- Local-asset R6 shopkeeper. Built in edit mode by the installer and reused at runtime.
+	-- No avatar downloads, animation loop, AI loop or moving physics assembly.
+	local Vendor = {}
+	Vendor.Version = 1
+
+	function Vendor.ensure(point)
+		local existing = point:FindFirstChild("WeaponVendor")
+		if existing and existing:GetAttribute("AppearanceVersion") == Vendor.Version then
+			return existing
+		end
+		if existing then existing:Destroy() end
+		-- Remove only the generated three-piece placeholder from the old installer.
+		for _, child in point:GetChildren() do
+			if child.Name == "Torso" or child.Name == "Head" or child.Name == "Hood" or child:IsA("BillboardGui") then
+				child:Destroy()
+			end
+		end
+
+		local model = Instance.new("Model")
+		model.Name = "WeaponVendor"
+		model.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
+		model:SetAttribute("AppearanceVersion", Vendor.Version)
+		local origin = CFrame.new(point.Position + Vector3.new(0, 2, 0)) * CFrame.Angles(0, math.pi, 0)
+		local skin = Color3.fromRGB(204, 165, 126)
+		local tunic = Color3.fromRGB(67, 83, 65)
+		local leather = Color3.fromRGB(91, 61, 39)
+		local dark = Color3.fromRGB(47, 37, 29)
+
+		local function part(name, size, offset, color)
+			local item = Instance.new("Part")
+			item.Name = name
+			item.Size = size
+			item.CFrame = origin * offset
+			item.Color = color
+			item.Material = Enum.Material.SmoothPlastic
+			item.CanCollide = false
+			item.CanTouch = false
+			item.CanQuery = false
+			item.CastShadow = false
+			item.Massless = true
+			item.TopSurface = Enum.SurfaceType.Smooth
+			item.BottomSurface = Enum.SurfaceType.Smooth
+			item.Parent = model
+			return item
+		end
+		local root = part("HumanoidRootPart", Vector3.new(2, 2, 1), CFrame.new(), tunic)
+		root.Anchored = true
+		root.Transparency = 1
+		local torso = part("Torso", Vector3.new(2, 2, 1), CFrame.new(), tunic)
+		local head = part("Head", Vector3.new(2, 1, 1), CFrame.new(0, 1.5, 0), skin)
+		local leftArm = part("Left Arm", Vector3.new(1, 2, 1), CFrame.new(-1.5, 0, 0), skin)
+		local rightArm = part("Right Arm", Vector3.new(1, 2, 1), CFrame.new(1.5, 0, 0), skin)
+		local leftLeg = part("Left Leg", Vector3.new(1, 2, 1), CFrame.new(-0.5, -2, 0), dark)
+		local rightLeg = part("Right Leg", Vector3.new(1, 2, 1), CFrame.new(0.5, -2, 0), dark)
+
+		local function joint(name, a, b, c0, c1)
+			local motor = Instance.new("Motor6D")
+			motor.Name = name
+			motor.Part0 = a
+			motor.Part1 = b
+			motor.C0 = c0
+			motor.C1 = c1
+			motor.Parent = a
+		end
+		joint("RootJoint", root, torso, CFrame.new(), CFrame.new())
+		joint("Neck", torso, head, CFrame.new(0, 1, 0), CFrame.new(0, -0.5, 0))
+		joint("Left Shoulder", torso, leftArm, CFrame.new(-1, 0.5, 0), CFrame.new(0.5, 0.5, 0))
+		joint("Right Shoulder", torso, rightArm, CFrame.new(1, 0.5, 0), CFrame.new(-0.5, 0.5, 0))
+		joint("Left Hip", torso, leftLeg, CFrame.new(-0.5, -1, 0), CFrame.new(0, 1, 0))
+		joint("Right Hip", torso, rightLeg, CFrame.new(0.5, -1, 0), CFrame.new(0, 1, 0))
+		local mesh = Instance.new("SpecialMesh")
+		mesh.MeshType = Enum.MeshType.Head
+		mesh.Scale = Vector3.new(1.2, 1.2, 1.2)
+		mesh.Parent = head
+		local face = Instance.new("Decal")
+		face.Name = "face"
+		face.Face = Enum.NormalId.Front
+		face.Texture = "rbxasset://textures/face.png"
+		face.Parent = head
+
+		local function garment(name, anchor, size, offset, color)
+			local item = part(name, size, CFrame.new(), color)
+			item.CFrame = anchor.CFrame * offset
+			local weld = Instance.new("WeldConstraint")
+			weld.Part0 = anchor
+			weld.Part1 = item
+			weld.Parent = item
+			return item
+		end
+		garment("LeatherApron", torso, Vector3.new(1.65, 2.4, 0.12), CFrame.new(0, -0.45, -0.57), leather)
+		garment("ApronStrap", torso, Vector3.new(0.22, 1.8, 0.12), CFrame.new(-0.5, 0.25, -0.59), dark)
+		garment("Belt", torso, Vector3.new(2.08, 0.22, 1.08), CFrame.new(0, -0.65, 0), dark)
+		garment("Buckle", torso, Vector3.new(0.34, 0.3, 0.12), CFrame.new(0, -0.65, -0.63), Color3.fromRGB(169, 145, 85))
+		garment("LeftSleeve", leftArm, Vector3.new(1.04, 1.05, 1.04), CFrame.new(0, 0.48, 0), tunic)
+		garment("RightSleeve", rightArm, Vector3.new(1.04, 1.05, 1.04), CFrame.new(0, 0.48, 0), tunic)
+		garment("LeftBoot", leftLeg, Vector3.new(1.06, 0.65, 1.15), CFrame.new(0, -0.67, -0.04), leather)
+		garment("RightBoot", rightLeg, Vector3.new(1.06, 0.65, 1.15), CFrame.new(0, -0.67, -0.04), leather)
+		local cap = garment("MerchantCap", head, Vector3.new(2.05, 0.65, 1.45), CFrame.new(0, 0.68, 0.05), dark)
+		cap.Shape = Enum.PartType.Ball
+
+		local humanoid = Instance.new("Humanoid")
+		humanoid.DisplayName = "Оружейник"
+		humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+		humanoid.AutoRotate = false
+		humanoid.WalkSpeed = 0
+		humanoid.BreakJointsOnDeath = false
+		humanoid.EvaluateStateMachine = false
+		humanoid.Parent = model
+		model.PrimaryPart = root
+
+		local board = Instance.new("BillboardGui")
+		board.Name = "VendorLabel"
+		board.Size = UDim2.fromOffset(180, 32)
+		board.StudsOffset = Vector3.new(0, 1.6, 0)
+		board.MaxDistance = 70
+		board.AlwaysOnTop = false
+		board.Parent = head
+		local label = Instance.new("TextLabel")
+		label.Size = UDim2.fromScale(1, 1)
+		label.BackgroundTransparency = 1
+		label.Font = Enum.Font.GothamBold
+		label.TextScaled = true
+		label.TextColor3 = Color3.fromRGB(240, 224, 186)
+		label.Text = "ОРУЖЕЙНИК"
+		label.Parent = board
+		model.Parent = point
+		return model
+	end
+
+	return Vendor
+	]]
+	editor:UpdateSourceAsync(obj,function() return source end)
+	end
+	do
+	local parent=ServerScriptService
+	parent=ensure(parent,"Combat","Folder")
+	local obj=ensure(parent,"World","ModuleScript")
+	local source=[[-- Finds the training yard built by build-combat.luau and wires its interaction points.
+	local World = {}
+
+	function World.init(config)
+		local map = workspace:FindFirstChild("Map")
+		assert(map, "Map missing: run build-map.luau first")
+		local yard = map:FindFirstChild(config.ModelName)
+		assert(yard, "TrainingYard missing: run build-combat.luau")
+		World.yard = yard
+		World.weaponPoints = {}
+		World.shieldPoint = nil
+		World.armorPoint = nil
+		World.vendorPoint = nil
+		World.trainingParts = {}
+		for _, item in yard:GetDescendants() do
+			if item:IsA("BasePart") then
+				local point = item:GetAttribute("CombatPoint")
+				if point == "Weapon" then
+					table.insert(World.weaponPoints, item)
+				elseif point == "Shield" then
+					World.shieldPoint = item
+				elseif point == "Armor" then
+					World.armorPoint = item
+				elseif point == "Vendor" then
+					World.vendorPoint = item
+				end
+				local parentName = item.Parent and item.Parent.Name or ""
+				if string.sub(parentName, 1, 6) == "Target" or string.sub(parentName, 1, 5) == "Dummy" or parentName == "Targets" then
+					table.insert(World.trainingParts, item)
+				end
+			end
+		end
+		return World
+	end
+
+	local function makePrompt(part, action, object, distance)
+		local prompt = Instance.new("ProximityPrompt")
+		prompt.ActionText = action
+		prompt.ObjectText = object
+		prompt.HoldDuration = 0.15
+		prompt.MaxActivationDistance = distance or 10
+		prompt.RequiresLineOfSight = false
+		prompt.Parent = part
+		return prompt
+	end
+
+	function World.attach(ctx)
+		World.prompts = {}
+
+		if World.vendorPoint then
+			ctx.vendor.ensure(World.vendorPoint)
+			local prompt = makePrompt(World.vendorPoint, "Торговать", "Оружейник", 12)
+			prompt.Triggered:Connect(function(player)
+				ctx.shop.open(player)
+			end)
+			table.insert(World.prompts, prompt)
+		end
+
+		for _, part in World.weaponPoints do
+			local weaponId = part:GetAttribute("WeaponId")
+			local definition = ctx.arsenal.weaponDefinition(weaponId)
+			if definition then
+				ctx.arsenal.spawnDisplay(part, weaponId)
+				local prompt = makePrompt(part, "Взять", definition.Name)
+				prompt.Triggered:Connect(function(player)
+					if ctx.arsenal.setWeapon(player, weaponId) then
+						ctx.net.Notice:FireClient(player, { text = "Взяла: " .. definition.Name, kind = "good" })
+					end
+				end)
+				table.insert(World.prompts, prompt)
+			end
+		end
+
+		if World.shieldPoint then
+			ctx.arsenal.spawnDisplay(World.shieldPoint, "Shield")
+			local prompt = makePrompt(World.shieldPoint, "Взять щит", "Стойка со щитами")
+			prompt.Triggered:Connect(function(player)
+				local state = ctx.stats.get(player)
+				local had = state.shield
+				ctx.arsenal.setShield(player, not had)
+				ctx.net.Notice:FireClient(player, { text = had and "Щит убран" or "Щит взят", kind = "good" })
+			end)
+			table.insert(World.prompts, prompt)
+		end
+
+		if World.armorPoint then
+			ctx.arsenal.spawnArmorDisplay(World.armorPoint)
+			local prompt = makePrompt(World.armorPoint, "Надеть броню", "Стойка с бронёй")
+			prompt.Triggered:Connect(function(player)
+				local state = ctx.stats.get(player)
+				local wearing = false
+				for _, piece in ctx.config.Armor do
+					if state.armor[piece.Id] then
+						wearing = true
+						break
+					end
+				end
+				if wearing then
+					ctx.arsenal.stripAll(player)
+					ctx.net.Notice:FireClient(player, { text = "Броня снята", kind = "info" })
+				else
+					ctx.arsenal.wearAll(player)
+					ctx.net.Notice:FireClient(player, { text = "Броня надета", kind = "good" })
+				end
+			end)
+			table.insert(World.prompts, prompt)
+		end
+	end
+
+	return World
+	]]
+	editor:UpdateSourceAsync(obj,function() return source end)
+	end
+	do
+	local parent=ServerScriptService
+	local obj=ensure(parent,"CombatBootstrap","Script")
+	obj.Enabled=false
+	local source=[[-- Server entry point for medieval combat. Requires the training yard from build-combat.luau.
+	local ReplicatedStorage = game:GetService("ReplicatedStorage")
+	local ServerScriptService = game:GetService("ServerScriptService")
+	local Players = game:GetService("Players")
+
+	local Config = require(ReplicatedStorage:WaitForChild("CombatConfig"))
+	local Net = require(ReplicatedStorage:WaitForChild("CombatNet"))
+
+	local folder = ServerScriptService:WaitForChild("Combat")
+	local World = require(folder.World)
+	local Arsenal = require(folder.Arsenal)
+	local Stats = require(folder.Stats)
+	local Melee = require(folder.Melee)
+	local Arrows = require(folder.Arrows)
+	local Shop = require(folder.Shop)
+	local Vendor = require(folder.Vendor)
+
+	local net = Net.server()
+	World.init(Config)
+
+	local ctx = {
+		config = Config,
+		net = net,
+		world = World,
+		arsenal = Arsenal,
+		stats = Stats,
+		melee = Melee,
+		arrows = Arrows,
+		shop = Shop,
+		vendor = Vendor,
+	}
+
+	Arsenal.init(ctx)
+	Stats.init(ctx)
+	Melee.init(ctx)
+	Arrows.init(ctx)
+	Shop.init(ctx)
+	World.attach(ctx)
+
+	Players.RespawnTime = Config.Player.RespawnTime
+
+	local function onCharacter(player, character)
+		Stats.reset(player)
+		local humanoid = character:WaitForChild("Humanoid", 10)
+		if humanoid then
+			humanoid.MaxHealth = Config.Player.MaxHealth
+			humanoid.Health = humanoid.MaxHealth
+			humanoid.WalkSpeed = Config.Movement.Walk
+		end
+		Arsenal.reapply(player)
+		net.Hud:FireClient(player, Stats.hudFor(player))
+	end
+
+	local function onPlayer(player)
+		Stats.get(player)
+		if player:GetAttribute("Gold") == nil then
+			player:SetAttribute("Gold", Config.Player.StartGold)
+		end
+		player.CharacterAdded:Connect(function(character)
+			onCharacter(player, character)
+		end)
+		if player.Character then
+			onCharacter(player, player.Character)
+		end
+	end
+
+	Players.PlayerAdded:Connect(onPlayer)
+	for _, player in Players:GetPlayers() do
+		onPlayer(player)
+	end
+
+	net.Attack.OnServerEvent:Connect(function(player, direction)
+		if type(direction) ~= "string" then
+			return
+		end
+		Melee.attack(player, direction)
+	end)
+
+	net.Block.OnServerEvent:Connect(function(player, on)
+		Stats.setBlocking(player, on == true)
+	end)
+
+	net.DrawStart.OnServerEvent:Connect(function(player)
+		Arrows.drawStart(player)
+	end)
+
+	net.Release.OnServerEvent:Connect(function(player, aim)
+		if aim ~= nil and typeof(aim) ~= "Vector3" then
+			return
+		end
+		Arrows.release(player, aim)
+	end)
+
+	net.Buy.OnServerEvent:Connect(function(player, itemId)
+		if type(itemId) ~= "string" or #itemId &gt; 24 then
+			return
+		end
+		Shop.buy(player, itemId)
+	end)
+
+	task.spawn(function()
+		while true do
+			task.wait(0.5)
+			Stats.broadcast()
+		end
+	end)
+
+	print("COMBAT_READY", Config.Version)
+	]]
+	editor:UpdateSourceAsync(obj,function() return source end)
+	obj.Enabled=true
+	end
+	do
+	local parent=StarterPlayerScripts
+	local obj=ensure(parent,"CombatClient","LocalScript")
+	obj.Enabled=false
+	local source=[[-- Combat HUD and input: LMB attack or draw bow, RMB block, mouse direction picks the swing.
+	local Players = game:GetService("Players")
+	local ReplicatedStorage = game:GetService("ReplicatedStorage")
+	local UserInputService = game:GetService("UserInputService")
+	local RunService = game:GetService("RunService")
+
+	local Config = require(ReplicatedStorage:WaitForChild("CombatConfig"))
+	local Net = require(ReplicatedStorage:WaitForChild("CombatNet"))
+	local remotes = Net.client()
+
+	local player = Players.LocalPlayer
+
+	local gui = Instance.new("ScreenGui")
+	gui.Name = "CombatHUD"
+	gui.ResetOnSpawn = false
+	gui.IgnoreGuiInset = true
+	gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	gui.Parent = player:WaitForChild("PlayerGui")
+
+	local panel = Instance.new("Frame")
+	panel.Name = "Panel"
+	panel.AnchorPoint = Vector2.new(0, 1)
+	panel.Position = UDim2.new(0, 18, 1, -18)
+	panel.Size = UDim2.fromOffset(300, 116)
+	panel.BackgroundColor3 = Color3.fromRGB(26, 24, 20)
+	panel.BackgroundTransparency = 0.25
+	panel.BorderSizePixel = 0
+	panel.Parent = gui
+	local panelCorner = Instance.new("UICorner")
+	panelCorner.CornerRadius = UDim.new(0, 10)
+	panelCorner.Parent = panel
+
+	local function bar(name, y, color)
+		local back = Instance.new("Frame")
+		back.Name = name .. "Back"
+		back.Position = UDim2.fromOffset(12, y)
+		back.Size = UDim2.fromOffset(276, 14)
+		back.BackgroundColor3 = Color3.fromRGB(48, 46, 40)
+		back.BorderSizePixel = 0
+		back.Parent = panel
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(0, 6)
+		corner.Parent = back
+		local fill = Instance.new("Frame")
+		fill.Name = name
+		fill.Size = UDim2.fromScale(1, 1)
+		fill.BackgroundColor3 = color
+		fill.BorderSizePixel = 0
+		fill.Parent = back
+		local fillCorner = Instance.new("UICorner")
+		fillCorner.CornerRadius = UDim.new(0, 6)
+		fillCorner.Parent = fill
+		return fill
+	end
+
+	local healthFill = bar("Health", 10, Color3.fromRGB(168, 58, 52))
+	local staminaFill = bar("Stamina", 32, Color3.fromRGB(196, 172, 92))
+
+	local weaponLabel = Instance.new("TextLabel")
+	weaponLabel.Position = UDim2.fromOffset(12, 52)
+	weaponLabel.Size = UDim2.fromOffset(276, 20)
+	weaponLabel.BackgroundTransparency = 1
+	weaponLabel.Font = Enum.Font.GothamBold
+	weaponLabel.TextSize = 14
+	weaponLabel.TextXAlignment = Enum.TextXAlignment.Left
+	weaponLabel.TextColor3 = Color3.fromRGB(240, 232, 212)
+	weaponLabel.Text = "Оружие: нет"
+	weaponLabel.Parent = panel
+
+	local armorLabel = Instance.new("TextLabel")
+	armorLabel.Position = UDim2.fromOffset(12, 74)
+	armorLabel.Size = UDim2.fromOffset(276, 18)
+	armorLabel.BackgroundTransparency = 1
+	armorLabel.Font = Enum.Font.GothamMedium
+	armorLabel.TextSize = 13
+	armorLabel.TextXAlignment = Enum.TextXAlignment.Left
+	armorLabel.TextColor3 = Color3.fromRGB(196, 200, 186)
+	armorLabel.Text = "Броня: нет"
+	armorLabel.Parent = panel
+
+	local hints = Instance.new("TextLabel")
+	hints.Position = UDim2.fromOffset(12, 92)
+	hints.Size = UDim2.fromOffset(276, 16)
+	hints.BackgroundTransparency = 1
+	hints.Font = Enum.Font.GothamMedium
+	hints.TextSize = 11
+	hints.TextXAlignment = Enum.TextXAlignment.Left
+	hints.TextColor3 = Color3.fromRGB(168, 164, 150)
+	hints.Text = "ЛКМ — удар/выстрел · ПКМ — блок · мышь задаёт направление"
+	hints.Parent = panel
+
+	local crosshair = Instance.new("Frame")
+	crosshair.Name = "Crosshair"
+	crosshair.AnchorPoint = Vector2.new(0.5, 0.5)
+	crosshair.Position = UDim2.new(0.5, 0, 0.5, 0)
+	crosshair.Size = UDim2.fromOffset(6, 6)
+	crosshair.BackgroundColor3 = Color3.fromRGB(238, 232, 214)
+	crosshair.BackgroundTransparency = 0.35
+	crosshair.BorderSizePixel = 0
+	crosshair.Parent = gui
+	local crosshairCorner = Instance.new("UICorner")
+	crosshairCorner.CornerRadius = UDim.new(1, 0)
+	crosshairCorner.Parent = crosshair
+
+	local drawBack = Instance.new("Frame")
+	drawBack.Name = "DrawBack"
+	drawBack.AnchorPoint = Vector2.new(0, 0.5)
+	drawBack.Position = UDim2.new(0.5, 24, 0.5, 0)
+	drawBack.Size = UDim2.fromOffset(12, 120)
+	drawBack.BackgroundColor3 = Color3.fromRGB(46, 44, 38)
+	drawBack.BorderSizePixel = 0
+	drawBack.Visible = false
+	drawBack.Parent = gui
+	local drawFill = Instance.new("Frame")
+	drawFill.Name = "Draw"
+	drawFill.AnchorPoint = Vector2.new(0, 1)
+	drawFill.Position = UDim2.new(0, 0, 1, 0)
+	drawFill.Size = UDim2.fromScale(1, 0)
+	drawFill.BackgroundColor3 = Color3.fromRGB(214, 186, 96)
+	drawFill.BorderSizePixel = 0
+	drawFill.Parent = drawBack
+
+	local notices = Instance.new("Frame")
+	notices.Name = "Notices"
+	notices.AnchorPoint = Vector2.new(0, 1)
+	notices.Position = UDim2.new(0, 18, 1, -142)
+	notices.Size = UDim2.fromOffset(460, 110)
+	notices.BackgroundTransparency = 1
+	notices.Parent = gui
+	local noticeLayout = Instance.new("UIListLayout")
+	noticeLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	noticeLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
+	noticeLayout.Padding = UDim.new(0, 3)
+	noticeLayout.Parent = notices
+
+	-- ---------------------------------------------------------------- armoury shop
+	local function itemName(itemId)
+		for _, weapon in Config.Weapons do
+			if weapon.Id == itemId then
+				return weapon.Name
+			end
+		end
+		for _, piece in Config.Armor do
+			if piece.Id == itemId then
+				return piece.Name
+			end
+		end
+		return itemId
+	end
+
+	local shopPanel = Instance.new("Frame")
+	shopPanel.Name = "Shop"
+	shopPanel.AnchorPoint = Vector2.new(0.5, 0.5)
+	shopPanel.Position = UDim2.new(0.5, 0, 0.5, 0)
+	shopPanel.Size = UDim2.fromOffset(360, 380)
+	shopPanel.BackgroundColor3 = Color3.fromRGB(30, 27, 22)
+	shopPanel.BackgroundTransparency = 0.05
+	shopPanel.BorderSizePixel = 0
+	shopPanel.Visible = false
+	shopPanel.Parent = gui
+	local shopCorner = Instance.new("UICorner")
+	shopCorner.CornerRadius = UDim.new(0, 12)
+	shopCorner.Parent = shopPanel
+
+	local shopTitle = Instance.new("TextLabel")
+	shopTitle.Position = UDim2.fromOffset(16, 10)
+	shopTitle.Size = UDim2.new(1, -32, 0, 26)
+	shopTitle.BackgroundTransparency = 1
+	shopTitle.Font = Enum.Font.GothamBold
+	shopTitle.TextSize = 18
+	shopTitle.TextXAlignment = Enum.TextXAlignment.Left
+	shopTitle.TextColor3 = Color3.fromRGB(240, 226, 190)
+	shopTitle.Text = "ОРУЖЕЙНИК"
+	shopTitle.Parent = shopPanel
+
+	local shopGold = Instance.new("TextLabel")
+	shopGold.Position = UDim2.fromOffset(16, 34)
+	shopGold.Size = UDim2.new(1, -32, 0, 20)
+	shopGold.BackgroundTransparency = 1
+	shopGold.Font = Enum.Font.GothamMedium
+	shopGold.TextSize = 14
+	shopGold.TextXAlignment = Enum.TextXAlignment.Left
+	shopGold.TextColor3 = Color3.fromRGB(226, 200, 120)
+	shopGold.Text = "Золото: 0"
+	shopGold.Parent = shopPanel
+
+	local shopList = Instance.new("Frame")
+	shopList.Position = UDim2.fromOffset(16, 62)
+	shopList.Size = UDim2.new(1, -32, 1, -112)
+	shopList.BackgroundTransparency = 1
+	shopList.Parent = shopPanel
+	local shopLayout = Instance.new("UIListLayout")
+	shopLayout.Padding = UDim.new(0, 4)
+	shopLayout.Parent = shopList
+
+	for _, item in Config.Shop do
+		local row = Instance.new("TextButton")
+		row.Size = UDim2.new(1, 0, 0, 30)
+		row.BackgroundColor3 = Color3.fromRGB(52, 46, 36)
+		row.BorderSizePixel = 0
+		row.Font = Enum.Font.GothamMedium
+		row.TextSize = 14
+		row.TextColor3 = Color3.fromRGB(236, 228, 208)
+		row.Text = string.format("%s — %d золота", itemName(item.Id), item.Price)
+		row.Parent = shopList
+		local rowCorner = Instance.new("UICorner")
+		rowCorner.CornerRadius = UDim.new(0, 8)
+		rowCorner.Parent = row
+		row.MouseButton1Click:Connect(function()
+			remotes.Buy:FireServer(item.Id)
+		end)
+	end
+
+	local shopClose = Instance.new("TextButton")
+	shopClose.AnchorPoint = Vector2.new(0.5, 1)
+	shopClose.Position = UDim2.new(0.5, 0, 1, -12)
+	shopClose.Size = UDim2.fromOffset(160, 30)
+	shopClose.BackgroundColor3 = Color3.fromRGB(60, 52, 40)
+	shopClose.BorderSizePixel = 0
+	shopClose.Font = Enum.Font.GothamBold
+	shopClose.TextSize = 14
+	shopClose.TextColor3 = Color3.fromRGB(238, 228, 206)
+	shopClose.Text = "Закрыть"
+	shopClose.Parent = shopPanel
+	local closeCorner = Instance.new("UICorner")
+	closeCorner.CornerRadius = UDim.new(0, 8)
+	closeCorner.Parent = shopClose
+	shopClose.MouseButton1Click:Connect(function()
+		shopPanel.Visible = false
+	end)
+
+	local shopGoldValue = 0
+
+	remotes.Shop.OnClientEvent:Connect(function(payload)
+		if payload.open == true then
+			shopPanel.Visible = true
+			shopGoldValue = payload.gold or shopGoldValue
+			shopGold.Text = "Золото: " .. tostring(shopGoldValue)
+		else
+			shopPanel.Visible = false
+			shopGoldValue = payload.gold or shopGoldValue
+		end
+	end)
+
+	local state = { weaponKind = "None", blocking = false, stamina = 100, staminaMax = 100, gold = 0 }
+	local drawing = false
+	local drawStarted = 0
+	local recentX, recentY = 0, 0
+
+	local bowDrawMin, bowDrawMax = 0.35, 1.2
+	for _, weapon in Config.Weapons do
+		if weapon.Kind == "Bow" then
+			bowDrawMin = weapon.DrawMin
+			bowDrawMax = weapon.DrawMax
+		end
+	end
+
+	local function pushNotice(text, kind)
+		local label = Instance.new("TextLabel")
+		label.Size = UDim2.new(1, 0, 0, 18)
+		label.BackgroundTransparency = 1
+		label.Font = Enum.Font.GothamMedium
+		label.TextSize = 13
+		label.TextXAlignment = Enum.TextXAlignment.Left
+		label.Text = text
+		if kind == "bad" then
+			label.TextColor3 = Color3.fromRGB(255, 158, 148)
+		elseif kind == "good" then
+			label.TextColor3 = Color3.fromRGB(178, 226, 168)
+		else
+			label.TextColor3 = Color3.fromRGB(228, 226, 212)
+		end
+		label.LayoutOrder = -math.floor(os.clock() * 10)
+		label.Parent = notices
+		task.delay(5, function()
+			if label.Parent then
+				label:Destroy()
+			end
+		end)
+	end
+
+	remotes.Hud.OnClientEvent:Connect(function(hud)
+		if hud.weaponKind then
+			state.weaponKind = hud.weaponKind
+		end
+		if hud.stamina then
+			state.stamina = hud.stamina
+			state.staminaMax = hud.staminaMax or state.staminaMax
+		end
+		if hud.weapon then
+			weaponLabel.Text = "Оружие: " .. hud.weapon
+		end
+		if hud.armor then
+			armorLabel.Text = "Броня: " .. hud.armor
+		end
+		if hud.blocking ~= nil then
+			state.blocking = hud.blocking
+			panel.BackgroundColor3 = state.blocking and Color3.fromRGB(40, 48, 40) or Color3.fromRGB(26, 24, 20)
+		end
+	end)
+
+	remotes.Notice.OnClientEvent:Connect(function(notice)
+		pushNotice(notice.text or "", notice.kind)
+	end)
+
+	local function chooseDirection()
+		if math.abs(recentX) &gt; 12 and math.abs(recentX) &gt;= math.abs(recentY) then
+			return recentX &gt; 0 and "Right" or "Left"
+		end
+		if recentY &lt; -12 then
+			return "Overhead"
+		elseif recentY &gt; 12 then
+			return "Stab"
+		end
+		local character = player.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			local move = humanoid.MoveDirection
+			if move.Z &lt; -0.4 then
+				return "Overhead"
+			elseif move.Z &gt; 0.4 then
+				return "Stab"
+			elseif move.X &gt; 0.4 then
+				return "Right"
+			elseif move.X &lt; -0.4 then
+				return "Left"
+			end
+		end
+		return "Right"
+	end
+
+	UserInputService.InputBegan:Connect(function(input, processed)
+		if processed or UserInputService:GetFocusedTextBox() then
+			return
+		end
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			if state.weaponKind == "Bow" then
+				drawing = true
+				drawStarted = os.clock()
+				drawBack.Visible = true
+				remotes.DrawStart:FireServer()
+			else
+				remotes.Attack:FireServer(chooseDirection())
+			end
+		elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
+			remotes.Block:FireServer(true)
+		end
+	end)
+
+	UserInputService.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 and drawing then
+			drawing = false
+			drawBack.Visible = false
+			drawFill.Size = UDim2.fromScale(1, 0)
+			local camera = workspace.CurrentCamera
+			remotes.Release:FireServer(camera and camera.CFrame.LookVector or nil)
+		elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
+			remotes.Block:FireServer(false)
+		end
+	end)
+
+	player.CharacterAdded:Connect(function()
+		drawing = false
+		drawBack.Visible = false
+		drawFill.Size = UDim2.fromScale(1, 0)
+		recentX, recentY = 0, 0
+	end)
+
+	RunService.RenderStepped:Connect(function()
+		local delta = UserInputService:GetMouseDelta()
+		recentX = recentX * 0.7 + delta.X
+		recentY = recentY * 0.7 + delta.Y
+
+		-- Safety: the button can be released outside the window, which would leave the draw stuck.
+		if drawing and not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+			drawing = false
+			drawBack.Visible = false
+			drawFill.Size = UDim2.fromScale(1, 0)
+		end
+
+		local character = player.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			local health = math.clamp(humanoid.Health / math.max(1, humanoid.MaxHealth), 0, 1)
+			healthFill.Size = UDim2.fromScale(health, 1)
+		end
+		staminaFill.Size = UDim2.fromScale(math.clamp(state.stamina / math.max(1, state.staminaMax), 0, 1), 1)
+		if shopPanel.Visible then
+			shopGold.Text = "Золото: " .. tostring(player:GetAttribute("Gold") or shopGoldValue)
+		end
+
+		if drawing then
+			local power = math.clamp((os.clock() - drawStarted - bowDrawMin) / math.max(0.01, bowDrawMax - bowDrawMin), 0, 1)
+			drawFill.Size = UDim2.fromScale(1, power)
+		end
+	end)
+	]]
+	editor:UpdateSourceAsync(obj,function() return source end)
+	obj.Enabled=true
+	end
+	-- Bake the shopkeeper in edit mode too; runtime reuses the same model.
+	do
+	local map=workspace:FindFirstChild("Map")
+	local yard=map and map:FindFirstChild("TrainingYard")
+	if yard then
+	local vendor=require(ServerScriptService.Combat.Vendor)
+	for _,point in yard:GetDescendants() do
+	if point:IsA("BasePart") and point:GetAttribute("CombatPoint")=="Vendor" then vendor.ensure(point) break end
+	end
+	end
+	end
+	print("COMBAT_INSTALL_OK",11,"source files")
+	do
+	local config=ReplicatedStorage:FindFirstChild("CombatConfig")
+	if config then config:SetAttribute("InstalledBuild",3) end
+	end
+end
+
+-- Must match BUILD_ID in tools/package-combat.py
+local BUILD_ID = 3
+
+local function currentBuild()
+	local config = game:GetService("ReplicatedStorage"):FindFirstChild("CombatConfig")
+	return config and config:GetAttribute("InstalledBuild") or 0
+end
+
+local function yardParts()
+	local map = workspace:FindFirstChild("Map")
+	local yard = map and map:FindFirstChild("TrainingYard")
+	local parts = 0
+	if yard then
+		for _, item in yard:GetDescendants() do
+			if item:IsA("BasePart") then
+				parts += 1
+			end
+		end
+	end
+	return yard, parts
+end
+
+local function isCombatProject()
+	if workspace:GetAttribute("HermesCombat") == true then
+		return true
+	end
+	-- The RPG place is the Crownlands map without the school: that is enough to build here.
+	local map = workspace:FindFirstChild("Map")
+	if not map then
+		return false
+	end
+	local settlements = map:FindFirstChild("Settlements")
+	local crownford = settlements and settlements:FindFirstChild("Crownford")
+	return crownford ~= nil and map:FindFirstChild("School") == nil
+end
+
+local function verify()
+	local yard, parts = yardParts()
+	local serverScriptService = game:GetService("ServerScriptService")
+	local replicatedStorage = game:GetService("ReplicatedStorage")
+	print(
+		"HERMES_COMBAT_VERIFY",
+		"yard=" .. tostring(yard ~= nil),
+		"parts=" .. parts,
+		"bootstrap=" .. tostring(serverScriptService:FindFirstChild("CombatBootstrap") ~= nil),
+		"modules=" .. tostring(serverScriptService:FindFirstChild("Combat") ~= nil),
+		"config=" .. tostring(replicatedStorage:FindFirstChild("CombatConfig") ~= nil),
+		"build=" .. currentBuild()
+	)
+end
+
+local function installOnly()
+	installCombat()
+	verify()
+	print("HERMES_COMBAT_UPDATED: скрипты боя обновлены до сборки " .. BUILD_ID)
+end
+
+local function run(forceYard)
+	if game:GetService("RunService"):IsRunning() then
+		warn("HERMES_COMBAT_FAIL: идёт Play — нажми Stop и повтори")
+		return
+	end
+	local changeHistory = game:GetService("ChangeHistoryService")
+	local recording = nil
+	local okRecording, result = pcall(function()
+		return changeHistory:TryBeginRecording("Hermes: бой")
+	end)
+	if okRecording then
+		recording = result
+	end
+	local yard, parts = yardParts()
+	if forceYard or parts == 0 then
+		buildYard()
+	end
+	installCombat()
+	verify()
+	if recording then
+		pcall(function()
+			changeHistory:FinishRecording(recording, Enum.FinishRecordingOperation.Commit)
+		end)
+	end
+	print("HERMES_COMBAT_DONE: двор и бой готовы. Сохрани место (Ctrl+S).")
+end
+
+button.Click:Connect(function()
+	button:SetActive(true)
+	local ok, err = pcall(function()
+		return run(true)
+	end)
+	button:SetActive(false)
+	if not ok then
+		warn("HERMES_COMBAT_FAIL: " .. tostring(err))
+	end
+end)
+
+task.spawn(function()
+	local playing = game:GetService("RunService"):IsRunning()
+	print("HERMES_COMBAT_PLUGIN_LOADED", "play=" .. tostring(playing))
+	if playing then
+		return
+	end
+	for _ = 1, 80 do
+		if workspace:FindFirstChild("Map") then
+			break
+		end
+		task.wait(0.25)
+	end
+	task.wait(1)
+	if not workspace:FindFirstChild("Map") then
+		warn("HERMES_COMBAT_FAIL: место не загружено (нет Workspace.Map)")
+		return
+	end
+	local yard, parts = yardParts()
+	if not isCombatProject() and parts == 0 then
+		print("HERMES_COMBAT_SKIP: это не проект боя (нет маркера Workspace.HermesCombat) — ничего не делаю")
+		return
+	end
+	if parts &gt; 0 and currentBuild() == BUILD_ID then
+		print("HERMES_COMBAT_SKIP: двор и бой уже установлены")
+		verify()
+		return
+	end
+	if parts &gt; 0 then
+		local ok, err = pcall(installOnly)
+		if not ok then
+			warn("HERMES_COMBAT_FAIL: " .. tostring(err))
+		end
+		return
+	end
+	local ok, err = pcall(function()
+		return run(false)
+	end)
+	if not ok then
+		warn("HERMES_COMBAT_FAIL: " .. tostring(err))
+	end
+end)
+</ProtectedString><bool name="Disabled">false</bool></Properties></Item></roblox>

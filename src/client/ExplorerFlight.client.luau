@@ -11,6 +11,8 @@ local flying=false
 local character,humanoid,root
 local velocity,orientation,attachment
 local originalParts={}
+local collisionConnections={}
+local descendantConnection
 local originalAutoRotate,originalPlatformStand
 local ACTION='ExplorerFlightWheel'
 local gui=Instance.new('ScreenGui')
@@ -25,14 +27,18 @@ local function updateInfo()
  script:SetAttribute('FlightSpeed',speed)
  label.Text=string.format('NOCLIP  •  %d studs/s  •  Колесо: скорость  •  Q: выход',math.floor(speed+.5))
 end
-local function noCollision()
- if not character then return end
- for _,p in character:GetDescendants() do
-  if p:IsA('BasePart') then
-   if originalParts[p]==nil then originalParts[p]=p.CanCollide end
-   p.CanCollide=false
-  end
+local function protectPart(p)
+ if not flying or not p:IsA('BasePart') then return end
+ if originalParts[p]==nil then
+  originalParts[p]=p.CanCollide
+  collisionConnections[p]=p:GetPropertyChangedSignal('CanCollide'):Connect(function()
+   if flying and p.Parent and p.CanCollide then p.CanCollide=false end
+  end)
  end
+ p.CanCollide=false
+end
+local function noCollision()
+ if character then for _,p in character:GetDescendants() do protectPart(p) end end
 end
 local function stop()
  flying=false script:SetAttribute('NoclipEnabled',false) label.Visible=false
@@ -40,6 +46,8 @@ local function stop()
  if velocity then velocity:Destroy() velocity=nil end
  if orientation then orientation:Destroy() orientation=nil end
  if attachment then attachment:Destroy() attachment=nil end
+ for _,connection in collisionConnections do connection:Disconnect() end
+ table.clear(collisionConnections)
  for p,value in originalParts do if p.Parent then p.CanCollide=value end end
  table.clear(originalParts)
  if root and root.Parent then root.AssemblyLinearVelocity=Vector3.zero root.AssemblyAngularVelocity=Vector3.zero end
@@ -70,14 +78,20 @@ end
 local generation=0
 local function added(c)
  generation+=1 local current=generation
+ if descendantConnection then descendantConnection:Disconnect() descendantConnection=nil end
  stop() character=c humanoid=nil root=nil
  local h=c:WaitForChild('Humanoid') local r=c:WaitForChild('HumanoidRootPart')
  if generation~=current or player.Character~=c then return end
  humanoid=h root=r
+ descendantConnection=c.DescendantAdded:Connect(protectPart)
  h.Died:Connect(function() if character==c then stop() end end)
 end
 player.CharacterAdded:Connect(added)
-player.CharacterRemoving:Connect(function(c) if character==c then generation+=1 stop() character=nil humanoid=nil root=nil end end)
+player.CharacterRemoving:Connect(function(c) if character==c then
+ generation+=1 stop()
+ if descendantConnection then descendantConnection:Disconnect() descendantConnection=nil end
+ character=nil humanoid=nil root=nil
+end end)
 if player.Character then task.spawn(added,player.Character) end
 Input.InputBegan:Connect(function(input,processed)
  if processed or Input:GetFocusedTextBox() or Gui.MenuIsOpen then return end
@@ -87,7 +101,6 @@ Input.WindowFocusReleased:Connect(function() if velocity then velocity.VectorVel
 Run.PreSimulation:Connect(function()
  if not flying then return end
  if not root or not root.Parent or not humanoid or humanoid.Health<=0 then stop() return end
- noCollision()
  local camera=workspace.CurrentCamera
  local direction=Vector3.zero
  if camera and not Input:GetFocusedTextBox() and not Gui.MenuIsOpen then
@@ -101,5 +114,9 @@ Run.PreSimulation:Connect(function()
  velocity.VectorVelocity=direction.Magnitude>0 and direction.Unit*speed or Vector3.zero
  root.AssemblyAngularVelocity=Vector3.zero
 end)
-script.Destroying:Connect(function() stop() gui:Destroy() end)
+script.Destroying:Connect(function()
+ stop()
+ if descendantConnection then descendantConnection:Disconnect() end
+ gui:Destroy()
+end)
 script:SetAttribute('NoclipEnabled',false) updateInfo() script:SetAttribute('Ready',true)

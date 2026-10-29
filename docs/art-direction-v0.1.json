@@ -1,0 +1,41 @@
+{
+  "project": "Crownlands",
+  "version": "0.1",
+  "status": "approved",
+  "approvedOn": "2026-10-29",
+  "approvalChannel": "User message in the project chat",
+  "approvalText": "Утверждаю Crownlands v0.1.\nСтиль: A.\nМатериалы: M01-M12 утверждаю.\nПравила со страницы 3: утверждаю.\nПравки: нет.",
+  "style": "A",
+  "styleDescription": "Сдержанное стилизованное европейское средневековье; читаемые формы, матовые поверхности, умеренные детали и приглушённая природная палитра.",
+  "rulesPage3Approved": true,
+  "requestedChanges": [],
+  "referenceDocument": "art-direction-v0.1/approval.pdf",
+  "styleReference": "art-direction-v0.1/style-comparison.png",
+  "materialReference": "art-direction-v0.1/material-board.png",
+  "implementationStatus": "main_map_integrated_2026-10-29",
+  "mainMap": "K:/AI_Studio/Hermes_roblox/RPG/kcdroleplay.rbxl",
+  "migrationReport": "style-main-report.md",
+  "textureStatus": "Appearance approved; production seamless maps and Roblox texture asset IDs are not yet supplied.",
+  "materials": [
+    {"id": "M01", "name": "Известковая штукатурка", "hex": "#CEC1A5", "pilotMaterial": "Plaster"},
+    {"id": "M02", "name": "Тёмный несущий брус", "hex": "#554438", "pilotMaterial": "Wood"},
+    {"id": "M03", "name": "Дубовые доски и двери", "hex": "#8B7357", "pilotMaterial": "WoodPlanks"},
+    {"id": "M04", "name": "Каменная кладка", "hex": "#848279", "pilotMaterial": "Cobblestone"},
+    {"id": "M05", "name": "Глиняная черепица", "hex": "#8C5A43", "pilotMaterial": "ClayRoofTiles"},
+    {"id": "M06", "name": "Деревянная дранка", "hex": "#5C5A50", "pilotMaterial": "RoofShingles"},
+    {"id": "M07", "name": "Кожа", "hex": "#795138", "pilotMaterial": "Leather"},
+    {"id": "M08", "name": "Лён", "hex": "#B7AA88", "pilotMaterial": "Fabric"},
+    {"id": "M09", "name": "Кованое железо", "hex": "#5B5E5C", "pilotMaterial": "Metal"},
+    {"id": "M10", "name": "Утоптанная земля", "hex": "#897454", "pilotMaterial": "Ground"},
+    {"id": "M11", "name": "Луговая трава", "hex": "#74805A", "pilotMaterial": "Grass"},
+    {"id": "M12", "name": "Листва деревьев", "hex": "#4F6647", "pilotMaterial": "Grass"}
+  ],
+  "rules": [
+    "Три эталона: деревенский дом, городской дом в два этажа, мастерская или таверна с навесом.",
+    "Крыши: единый конёк, согласованные скаты, закрытые фронтоны, свесы и опирающиеся детали без щелей и случайных выступов.",
+    "Торговец и NPC: человеческий силуэт, средневековая одежда, общие пропорции, детализация и материалы.",
+    "Окружение и предметы: общие масштабы и палитра, матовые дерево, ткань и кожа.",
+    "Свет и интерфейс: единая палитра, сравнение при дневном свете и в сумерках, без направленных теней в цветовых текстурах.",
+    "Производительность: мелкий рисунок в текстурах, геометрия для силуэта, повторное использование материалов, LOD после принятия эталонов."
+  ]
+}

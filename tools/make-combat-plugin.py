@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT / "build-combat.luau"
 INSTALL = ROOT / "install-combat.luau"
 TARGET = ROOT / "hermes-combat-plugin.rbxmx"
-BUILD_ID = 2  # must match BUILD_ID in tools/package-combat.py
+BUILD_ID = 4  # must match BUILD_ID in tools/package-combat.py
 
 HEADER = """-- Hermes: бой. Плагин сам собирает тренировочный двор и ставит систему боя.
 -- Источники встроены дословно из репозитория K:\\AI_Studio\\Hermes_roblox\\RPG.
@@ -33,7 +33,7 @@ FOOTER = """
 end
 
 -- Must match BUILD_ID in tools/package-combat.py
-local BUILD_ID = 2
+local BUILD_ID = 4
 
 local function currentBuild()
 	local config = game:GetService("ReplicatedStorage"):FindFirstChild("CombatConfig")
@@ -149,7 +149,7 @@ task.spawn(function()
 		print("HERMES_COMBAT_SKIP: это не проект боя (нет маркера Workspace.HermesCombat) — ничего не делаю")
 		return
 	end
-	if parts > 0 and currentBuild() == BUILD_ID then
+	if parts > 0 and currentBuild() >= BUILD_ID then
 		print("HERMES_COMBAT_SKIP: двор и бой уже установлены")
 		verify()
 		return

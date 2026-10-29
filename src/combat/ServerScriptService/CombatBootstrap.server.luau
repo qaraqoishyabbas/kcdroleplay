@@ -13,6 +13,7 @@ local Stats = require(folder.Stats)
 local Melee = require(folder.Melee)
 local Arrows = require(folder.Arrows)
 local Shop = require(folder.Shop)
+local Vendor = require(folder.Vendor)
 
 local net = Net.server()
 World.init(Config)
@@ -26,6 +27,7 @@ local ctx = {
 	melee = Melee,
 	arrows = Arrows,
 	shop = Shop,
+	vendor = Vendor,
 }
 
 Arsenal.init(ctx)
@@ -78,7 +80,8 @@ net.Block.OnServerEvent:Connect(function(player, on)
 	Stats.setBlocking(player, on == true)
 end)
 
-net.DrawStart.OnServerEvent:Connect(function(player)
+net.DrawStart.OnServerEvent:Connect(function(player, active)
+	if active == false then Stats.get(player).drawStarted = 0 return end
 	Arrows.drawStart(player)
 end)
 

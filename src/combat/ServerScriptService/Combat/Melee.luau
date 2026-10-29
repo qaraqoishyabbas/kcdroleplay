@@ -67,13 +67,17 @@ function Melee.attack(player, directionName)
 	state.lastAttack = now
 	local direction = ctx.config.Directions[directionName] or ctx.config.Directions.Right
 	local character = player.Character
+	local serial = state.actionSerial
+	local weaponId = state.weapon
 	slashVisual(character, directionName, weapon)
 	task.delay(math.max(0.05, weapon.Windup + (direction.Windup or 0)), function()
+		if player.Character ~= character or state.actionSerial ~= serial or state.weapon ~= weaponId then return end
 		Melee.resolve(player, weapon, direction)
 	end)
 end
 
 function Melee.resolve(player, weapon, direction)
+	if not ctx.stats.canAct(player, workspace:GetServerTimeNow()) then return end
 	local character = player.Character
 	local root = character and character:FindFirstChild("HumanoidRootPart")
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")

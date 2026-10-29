@@ -44,7 +44,7 @@ local StarterPlayerScripts = game:GetService("StarterPlayer"):WaitForChild("Star
 
 check(ServerScriptService:FindFirstChild("CombatBootstrap") ~= nil, "CombatBootstrap missing")
 local folder = assert(ServerScriptService:FindFirstChild("Combat"), "Combat module folder missing")
-for _, name in { "World", "Arsenal", "Stats", "Melee", "Arrows" } do
+for _, name in { "World", "Arsenal", "Stats", "Melee", "Arrows", "Shop", "Vendor" } do
 	local module = folder:FindFirstChild(name)
 	check(module ~= nil and module:IsA("ModuleScript"), "Module missing: " .. name)
 	check(#module.Source > 400, "Module looks empty: " .. name)
@@ -55,7 +55,7 @@ check(StarterPlayerScripts:FindFirstChild("CombatClient") ~= nil, "CombatClient 
 
 local config = ReplicatedStorage:FindFirstChild("CombatConfig")
 if config then
-	check(config:GetAttribute("InstalledBuild") == 1, "Combat scripts are not the current build")
+	check(config:GetAttribute("InstalledBuild") == 4, "Combat scripts are not the current build")
 end
 
 -- The yard must stand on solid ground and its racks must be reachable.
@@ -65,8 +65,12 @@ params.FilterDescendantsInstances = { yard }
 local ground = workspace:Raycast(Vector3.new(-1000, 60, -330), Vector3.new(0, -120, 0), params)
 check(ground ~= nil, "No ground under the training yard")
 
-local racks = workspace:Raycast(Vector3.new(-46, 60, -24), Vector3.new(0, -120, 0), params)
-check(racks ~= nil and racks.Position.Y > -2, "Weapon racks float or sink")
+for _,p in yard:GetDescendants() do
+	if p:IsA("BasePart") and p:GetAttribute("CombatPoint")=="Weapon" then
+		local ground=workspace:Raycast(p.Position+Vector3.new(0,20,0),Vector3.new(0,-60,0),params)
+		check(ground ~= nil and ground.Position.Y > p.Position.Y-6, "Weapon rack has no ground: "..p.Name)
+	end
+end
 
 for _, child in workspace:GetChildren() do
 	if child:IsA("Model") and child.Name == "TrainingYard" and child ~= yard then

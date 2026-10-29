@@ -27,6 +27,7 @@ function Stats.get(player)
 			shield = false,
 			armor = {},
 			lastTrainReward = 0,
+			actionSerial = 0,
 		}
 		states[player] = state
 	end
@@ -44,15 +45,21 @@ function Stats.reset(player)
 	state.staggeredUntil = 0
 	state.lastAttack = 0
 	state.drawStarted = 0
+	state.actionSerial += 1
 end
 
 function Stats.canAct(player, now)
 	local state = Stats.get(player)
-	return now >= state.staggeredUntil
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	return humanoid ~= nil and humanoid.Health > 0 and now >= state.staggeredUntil
 end
 
 function Stats.setStagger(player, seconds, now)
 	local state = Stats.get(player)
+	state.actionSerial += 1
+	state.drawStarted = 0
+	state.blocking = false
 	local until_ = (now or workspace:GetServerTimeNow()) + seconds
 	if until_ > state.staggeredUntil then
 		state.staggeredUntil = until_
@@ -67,8 +74,8 @@ function Stats.setStagger(player, seconds, now)
 		if current and (current.staggeredUntil <= workspace:GetServerTimeNow()) then
 			local char = player.Character
 			local hum = char and char:FindFirstChildOfClass("Humanoid")
-			if hum then
-				hum.WalkSpeed = ctx.config.Movement.Walk
+			if hum and hum.Health > 0 then
+				hum.WalkSpeed = ctx.config.Movement.Walk * (current.blocking and ctx.config.Block.MoveMultiplier or 1)
 			end
 		end
 	end)
@@ -94,6 +101,7 @@ function Stats.setBlocking(player, on)
 	end
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not humanoid or humanoid.Health <= 0 then state.blocking = false return end
 	if humanoid then
 		local baseSpeed = ctx.config.Movement.Walk
 		if state.blocking then
@@ -121,7 +129,7 @@ function Stats.damage(target, amount, attacker, kind, armorPierce)
 	local state = Stats.get(target)
 	local now = workspace:GetServerTimeNow()
 
-	if state.blocking then
+	if state.blocking and now >= state.staggeredUntil then
 		local targetRoot = rootOf(target)
 		local attackerRoot = attacker and rootOf(attacker)
 		local blocked = false
@@ -220,15 +228,24 @@ function Stats.hudFor(player)
 		weaponKind = weaponKind,
 		shield = state.shield,
 		armor = ctx.arsenal.armorLabel(player),
-		blocking = state.blocking,
+		blocking = state.blocking and workspace:GetServerTimeNow() >= state.staggeredUntil,
 		gold = Stats.getGold(player),
 	}
 end
 
 function Stats.broadcast()
-	for player in states do
+	for player, state in states do
 		if player.Parent then
-			ctx.net.Hud:FireClient(player, Stats.hudFor(player))
+			local hud = Stats.hudFor(player)
+			local previous = state.lastBroadcast
+			local changed = previous == nil
+			if previous then
+				for key, value in hud do if previous[key] ~= value then changed = true break end end
+			end
+			if changed then
+				state.lastBroadcast = hud
+				ctx.net.Hud:FireClient(player, hud)
+			end
 		end
 	end
 end

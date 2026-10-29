@@ -17,7 +17,7 @@ local obj=ensure(parent,"CombatConfig","ModuleScript")
 local source=[[-- Medieval combat tuning. All numbers live here; nothing else in the project hardcodes damage.
 local Config = {}
 
-Config.Version = "combat 1.0"
+Config.Version = "combat 1.1"
 Config.ModelName = "TrainingYard"
 
 Config.Player = { MaxHealth = 100, RespawnTime = 4, StartGold = 200 }
@@ -209,6 +209,13 @@ end
 function Arrows.release(player, aim)
 	local now = workspace:GetServerTimeNow()
 	local state = ctx.stats.get(player)
+	if not ctx.stats.canAct(player, now) then state.drawStarted = 0 return end
+	if aim ~= nil then
+		if typeof(aim) ~= "Vector3" then state.drawStarted = 0 return end
+		for _, n in {aim.X,aim.Y,aim.Z} do
+			if n ~= n or math.abs(n) > 1e6 then state.drawStarted = 0 return end
+		end
+	end
 	local weapon = ctx.arsenal.weaponDefinition(state.weapon or "")
 	if not weapon or weapon.Kind ~= "Bow" then
 		return
@@ -259,10 +266,12 @@ function Arrows.release(player, aim)
 	arrow.CanQuery = false
 	arrow.Massless = false
 	arrow.Parent = workspace
+	if arrow.SetNetworkOwner then arrow:SetNetworkOwner(nil) end
 	arrow.AssemblyLinearVelocity = direction * speed
 
 	table.insert(active, {
 		part = arrow,
+		previousPosition = origin,
 		owner = player,
 		damage = damage,
 		expire = now + ctx.config.Arrow.Lifetime,
@@ -283,7 +292,9 @@ function Arrows.loop()
 				end
 				table.remove(active, index)
 			else
-				local step = arrow.AssemblyLinearVelocity * ctx.config.Arrow.Step
+				local from = record.previousPosition or arrow.Position
+				local step = arrow.Position + arrow.AssemblyLinearVelocity * ctx.config.Arrow.Step - from
+				record.previousPosition = arrow.Position
 				if step.Magnitude > 0.05 then
 					local params = RaycastParams.new()
 					params.FilterType = Enum.RaycastFilterType.Exclude
@@ -293,12 +304,23 @@ function Arrows.loop()
 						table.insert(exclude, ownerCharacter)
 					end
 					params.FilterDescendantsInstances = exclude
-					local hit = workspace:Raycast(arrow.Position, step, params)
+					local hit = workspace:Raycast(from, step, params)
 					if hit then
 						local hitModel = hit.Instance and hit.Instance:FindFirstAncestorOfClass("Model")
 						local target = hitModel and Players:GetPlayerFromCharacter(hitModel) or nil
 						if target and target ~= record.owner then
 							ctx.stats.damage(target, record.damage, record.owner, "стрела", 0.15)
+						elseif record.owner and record.owner.Parent then
+							local state = ctx.stats.get(record.owner)
+							if now-state.lastTrainReward >= ctx.config.Gold.DummyCooldown then
+								for _, training in ctx.world.trainingParts do
+									if hit.Instance == training then
+										state.lastTrainReward = now
+										ctx.stats.addGold(record.owner, ctx.config.Gold.DummyReward, "мишень")
+										break
+									end
+								end
+							end
 						end
 						arrow.AssemblyLinearVelocity = Vector3.zero
 						arrow.Anchored = true
@@ -391,9 +413,10 @@ local function mountModel(character, modelName, weaponId, side, grip)
 	local model = Instance.new("Model")
 	model.Name = modelName
 	local base = nil
+	local frame = hand.CFrame * (grip or CFrame.Angles(math.rad(75), 0, 0))
 	for index, spec in specs do
 		local color = spec.Color == "Dark" and ctx.config.Grey.Dark or ctx.config.Grey.Color
-		local item = makePart(model, spec.Name, spec.Size, CFrame.new() * spec.Offset, color)
+		local item = makePart(model, spec.Name, spec.Size, frame * spec.Offset, color)
 		if index == 1 then
 			base = item
 		end
@@ -404,12 +427,17 @@ local function mountModel(character, modelName, weaponId, side, grip)
 	end
 	for _, item in model:GetChildren() do
 		if item ~= base and item:IsA("BasePart") then
-			weldTo(item, base, CFrame.new())
+			local joint = Instance.new("WeldConstraint")
+			joint.Part0 = base
+			joint.Part1 = item
+			joint.Parent = item
 		end
 	end
 	model.Parent = character
-	base.CFrame = hand.CFrame * (grip or CFrame.Angles(math.rad(75), 0, 0))
-	weldTo(base, hand, grip or CFrame.Angles(math.rad(75), 0, 0))
+	local joint = Instance.new("WeldConstraint")
+	joint.Part0 = hand
+	joint.Part1 = base
+	joint.Parent = base
 	model.PrimaryPart = base
 	return model
 end
@@ -428,29 +456,31 @@ function Arsenal.setWeapon(player, weaponId)
 	if not character then
 		return false
 	end
-	Arsenal.clearWeapon(player)
 	local definition = Arsenal.weaponDefinition(weaponId)
-	if not definition then
+	if not definition or (definition.Kind ~= "Melee" and definition.Kind ~= "Bow") then
 		return false
 	end
 	local model = mountModel(character, "Weapon_" .. weaponId, weaponId, "right", GRIP[weaponId])
 	if not model then
 		return false
 	end
+	Arsenal.clearWeapon(player, model)
 	state.weapon = weaponId
 	ctx.net.Hud:FireClient(player, ctx.stats.hudFor(player))
 	return true
 end
 
-function Arsenal.clearWeapon(player)
+function Arsenal.clearWeapon(player, preserve)
 	local state = ctx.stats.get(player)
 	state.weapon = nil
+	state.drawStarted = 0
+	state.actionSerial += 1
 	local character = player.Character
 	if not character then
 		return
 	end
 	for _, item in character:GetChildren() do
-		if item:IsA("Model") and string.sub(item.Name, 1, 7) == "Weapon_" then
+		if item ~= preserve and item:IsA("Model") and item.Name ~= "Weapon_Shield" and string.sub(item.Name, 1, 7) == "Weapon_" then
 			item:Destroy()
 		end
 	end
@@ -720,13 +750,17 @@ function Melee.attack(player, directionName)
 	state.lastAttack = now
 	local direction = ctx.config.Directions[directionName] or ctx.config.Directions.Right
 	local character = player.Character
+	local serial = state.actionSerial
+	local weaponId = state.weapon
 	slashVisual(character, directionName, weapon)
 	task.delay(math.max(0.05, weapon.Windup + (direction.Windup or 0)), function()
+		if player.Character ~= character or state.actionSerial ~= serial or state.weapon ~= weaponId then return end
 		Melee.resolve(player, weapon, direction)
 	end)
 end
 
 function Melee.resolve(player, weapon, direction)
+	if not ctx.stats.canAct(player, workspace:GetServerTimeNow()) then return end
 	local character = player.Character
 	local root = character and character:FindFirstChild("HumanoidRootPart")
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -852,6 +886,12 @@ function Shop.buy(player, itemId)
 		ctx.net.Notice:FireClient(player, { text = "Сначала вернись в бой", kind = "bad" })
 		return
 	end
+	local root = character:FindFirstChild("HumanoidRootPart")
+	local vendor = ctx.world.vendorPoint
+	if not root or not vendor or not vendor.Parent or (root.Position-vendor.Position).Magnitude > 14 then
+		ctx.net.Notice:FireClient(player, { text = "Подойди к оружейнику", kind = "bad" })
+		return
+	end
 	local gold = ctx.stats.getGold(player)
 	if gold < item.Price then
 		ctx.net.Notice:FireClient(player, { text = "Не хватает " .. (item.Price - gold) .. " золота", kind = "bad" })
@@ -912,6 +952,7 @@ function Stats.get(player)
 			shield = false,
 			armor = {},
 			lastTrainReward = 0,
+			actionSerial = 0,
 		}
 		states[player] = state
 	end
@@ -929,15 +970,21 @@ function Stats.reset(player)
 	state.staggeredUntil = 0
 	state.lastAttack = 0
 	state.drawStarted = 0
+	state.actionSerial += 1
 end
 
 function Stats.canAct(player, now)
 	local state = Stats.get(player)
-	return now >= state.staggeredUntil
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	return humanoid ~= nil and humanoid.Health > 0 and now >= state.staggeredUntil
 end
 
 function Stats.setStagger(player, seconds, now)
 	local state = Stats.get(player)
+	state.actionSerial += 1
+	state.drawStarted = 0
+	state.blocking = false
 	local until_ = (now or workspace:GetServerTimeNow()) + seconds
 	if until_ > state.staggeredUntil then
 		state.staggeredUntil = until_
@@ -952,8 +999,8 @@ function Stats.setStagger(player, seconds, now)
 		if current and (current.staggeredUntil <= workspace:GetServerTimeNow()) then
 			local char = player.Character
 			local hum = char and char:FindFirstChildOfClass("Humanoid")
-			if hum then
-				hum.WalkSpeed = ctx.config.Movement.Walk
+			if hum and hum.Health > 0 then
+				hum.WalkSpeed = ctx.config.Movement.Walk * (current.blocking and ctx.config.Block.MoveMultiplier or 1)
 			end
 		end
 	end)
@@ -979,6 +1026,7 @@ function Stats.setBlocking(player, on)
 	end
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not humanoid or humanoid.Health <= 0 then state.blocking = false return end
 	if humanoid then
 		local baseSpeed = ctx.config.Movement.Walk
 		if state.blocking then
@@ -1006,7 +1054,7 @@ function Stats.damage(target, amount, attacker, kind, armorPierce)
 	local state = Stats.get(target)
 	local now = workspace:GetServerTimeNow()
 
-	if state.blocking then
+	if state.blocking and now >= state.staggeredUntil then
 		local targetRoot = rootOf(target)
 		local attackerRoot = attacker and rootOf(attacker)
 		local blocked = false
@@ -1105,20 +1153,174 @@ function Stats.hudFor(player)
 		weaponKind = weaponKind,
 		shield = state.shield,
 		armor = ctx.arsenal.armorLabel(player),
-		blocking = state.blocking,
+		blocking = state.blocking and workspace:GetServerTimeNow() >= state.staggeredUntil,
 		gold = Stats.getGold(player),
 	}
 end
 
 function Stats.broadcast()
-	for player in states do
+	for player, state in states do
 		if player.Parent then
-			ctx.net.Hud:FireClient(player, Stats.hudFor(player))
+			local hud = Stats.hudFor(player)
+			local previous = state.lastBroadcast
+			local changed = previous == nil
+			if previous then
+				for key, value in hud do if previous[key] ~= value then changed = true break end end
+			end
+			if changed then
+				state.lastBroadcast = hud
+				ctx.net.Hud:FireClient(player, hud)
+			end
 		end
 	end
 end
 
 return Stats
+]]
+editor:UpdateSourceAsync(obj,function() return source end)
+end
+do
+local parent=ServerScriptService
+parent=ensure(parent,"Combat","Folder")
+local obj=ensure(parent,"Vendor","ModuleScript")
+local source=[[-- Local-asset R6 shopkeeper. Built in edit mode by the installer and reused at runtime.
+-- No avatar downloads, animation loop, AI loop or moving physics assembly.
+local Vendor = {}
+Vendor.Version = 2
+
+function Vendor.ensure(point)
+	local existing = point:FindFirstChild("WeaponVendor")
+	if existing and existing:GetAttribute("AppearanceVersion") == Vendor.Version then
+		-- Humanoid initialization can restore Torso.CanCollide on place load.
+		for _, part in existing:GetDescendants() do
+			if part:IsA("BasePart") then part.CanCollide=false part.CanTouch=false part.CanQuery=false end
+		end
+		return existing
+	end
+	if existing then existing:Destroy() end
+	-- Remove only the generated three-piece placeholder from the old installer.
+	for _, child in point:GetChildren() do
+		if child.Name == "Torso" or child.Name == "Head" or child.Name == "Hood" or child:IsA("BillboardGui") then
+			child:Destroy()
+		end
+	end
+
+	local model = Instance.new("Model")
+	model.Name = "WeaponVendor"
+	model.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
+	model:SetAttribute("AppearanceVersion", Vendor.Version)
+	local origin = CFrame.new(point.Position + Vector3.new(0, 2, 0)) * CFrame.Angles(0, math.pi, 0)
+	local skin = Color3.fromRGB(204, 165, 126)
+	local tunic = Color3.fromRGB(183, 170, 136)
+	local leather = Color3.fromRGB(121, 81, 56)
+	local dark = Color3.fromRGB(85, 68, 56)
+
+	local function part(name, size, offset, color)
+		local item = Instance.new("Part")
+		item.Name = name
+		item.Size = size
+		item.CFrame = origin * offset
+		item.Color = color
+		item.Material = (name=="Head" or name=="Left Arm" or name=="Right Arm") and Enum.Material.SmoothPlastic or Enum.Material.Fabric
+		item.CanCollide = false
+		item.CanTouch = false
+		item.CanQuery = false
+		item.CastShadow = false
+		item.Massless = true
+		item.TopSurface = Enum.SurfaceType.Smooth
+		item.BottomSurface = Enum.SurfaceType.Smooth
+		item.Parent = model
+		return item
+	end
+	local root = part("HumanoidRootPart", Vector3.new(2, 2, 1), CFrame.new(), tunic)
+	root.Anchored = true
+	root.Transparency = 1
+	local torso = part("Torso", Vector3.new(2, 2, 1), CFrame.new(), tunic)
+	local head = part("Head", Vector3.new(2, 1, 1), CFrame.new(0, 1.5, 0), skin)
+	local leftArm = part("Left Arm", Vector3.new(1, 2, 1), CFrame.new(-1.5, 0, 0), skin)
+	local rightArm = part("Right Arm", Vector3.new(1, 2, 1), CFrame.new(1.5, 0, 0), skin)
+	local leftLeg = part("Left Leg", Vector3.new(1, 2, 1), CFrame.new(-0.5, -2, 0), dark)
+	local rightLeg = part("Right Leg", Vector3.new(1, 2, 1), CFrame.new(0.5, -2, 0), dark)
+
+	local function joint(name, a, b, c0, c1)
+		local motor = Instance.new("Motor6D")
+		motor.Name = name
+		motor.Part0 = a
+		motor.Part1 = b
+		motor.C0 = c0
+		motor.C1 = c1
+		motor.Parent = a
+	end
+	joint("RootJoint", root, torso, CFrame.new(), CFrame.new())
+	joint("Neck", torso, head, CFrame.new(0, 1, 0), CFrame.new(0, -0.5, 0))
+	joint("Left Shoulder", torso, leftArm, CFrame.new(-1, 0.5, 0), CFrame.new(0.5, 0.5, 0))
+	joint("Right Shoulder", torso, rightArm, CFrame.new(1, 0.5, 0), CFrame.new(-0.5, 0.5, 0))
+	joint("Left Hip", torso, leftLeg, CFrame.new(-0.5, -1, 0), CFrame.new(0, 1, 0))
+	joint("Right Hip", torso, rightLeg, CFrame.new(0.5, -1, 0), CFrame.new(0, 1, 0))
+	local mesh = Instance.new("SpecialMesh")
+	mesh.MeshType = Enum.MeshType.Head
+	mesh.Scale = Vector3.new(1.2, 1.2, 1.2)
+	mesh.Parent = head
+	local face = Instance.new("Decal")
+	face.Name = "face"
+	face.Face = Enum.NormalId.Front
+	face.Texture = "rbxasset://textures/face.png"
+	face.Parent = head
+
+	local function garment(name, anchor, size, offset, color, material)
+		local item = part(name, size, CFrame.new(), color)
+		item.Material = material or Enum.Material.Leather
+		item.CFrame = anchor.CFrame * offset
+		local weld = Instance.new("WeldConstraint")
+		weld.Part0 = anchor
+		weld.Part1 = item
+		weld.Parent = item
+		return item
+	end
+	garment("LeatherApron", torso, Vector3.new(1.65, 2.4, 0.12), CFrame.new(0, -0.45, -0.57), leather)
+	garment("ApronStrap", torso, Vector3.new(0.22, 1.8, 0.12), CFrame.new(-0.5, 0.25, -0.59), dark)
+	garment("Belt", torso, Vector3.new(2.08, 0.22, 1.08), CFrame.new(0, -0.65, 0), dark)
+	garment("Buckle", torso, Vector3.new(0.34, 0.3, 0.12), CFrame.new(0, -0.65, -0.63), Color3.fromRGB(91,94,92), Enum.Material.Metal)
+	garment("LeftSleeve", leftArm, Vector3.new(1.04, 1.05, 1.04), CFrame.new(0, 0.48, 0), tunic, Enum.Material.Fabric)
+	garment("RightSleeve", rightArm, Vector3.new(1.04, 1.05, 1.04), CFrame.new(0, 0.48, 0), tunic, Enum.Material.Fabric)
+	garment("LeftBoot", leftLeg, Vector3.new(1.06, 0.65, 1.15), CFrame.new(0, -0.67, -0.04), leather)
+	garment("RightBoot", rightLeg, Vector3.new(1.06, 0.65, 1.15), CFrame.new(0, -0.67, -0.04), leather)
+	local cap = garment("MerchantCap", head, Vector3.new(2.05, 0.65, 1.45), CFrame.new(0, 0.68, 0.05), dark, Enum.Material.Fabric)
+	cap.Shape = Enum.PartType.Ball
+
+	local humanoid = Instance.new("Humanoid")
+	humanoid.DisplayName = "Оружейник"
+	humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+	humanoid.AutoRotate = false
+	humanoid.WalkSpeed = 0
+	humanoid.BreakJointsOnDeath = false
+	humanoid.EvaluateStateMachine = false
+	humanoid.Parent = model
+	model.PrimaryPart = root
+
+	local board = Instance.new("BillboardGui")
+	board.Name = "VendorLabel"
+	board.Size = UDim2.fromOffset(180, 32)
+	board.StudsOffset = Vector3.new(0, 1.6, 0)
+	board.MaxDistance = 70
+	board.AlwaysOnTop = false
+	board.Parent = head
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.fromScale(1, 1)
+	label.BackgroundTransparency = 1
+	label.Font = Enum.Font.GothamBold
+	label.TextScaled = true
+	label.TextColor3 = Color3.fromRGB(240, 224, 186)
+	label.Text = "ОРУЖЕЙНИК"
+	label.Parent = board
+	model.Parent = point
+	for _, item in model:GetDescendants() do
+		if item:IsA("BasePart") then item.CanCollide=false item.CanTouch=false item.CanQuery=false end
+	end
+	return model
+end
+
+return Vendor
 ]]
 editor:UpdateSourceAsync(obj,function() return source end)
 end
@@ -1175,45 +1377,8 @@ end
 function World.attach(ctx)
 	World.prompts = {}
 
-	local function makeVendor(point)
-		local base = point.Position
-		local function piece(name, size, offset, color, shape)
-			local item = Instance.new("Part")
-			item.Name = name
-			item.Size = size
-			item.CFrame = CFrame.new(base + offset)
-			item.Color = color
-			item.Material = Enum.Material.SmoothPlastic
-			item.Anchored = true
-			item.CanCollide = false
-			item.CanQuery = false
-			item.CanTouch = false
-			item.Parent = point
-			if shape then
-				item.Shape = shape
-			end
-			return item
-		end
-		piece("Torso", Vector3.new(2.2, 2.4, 1.2), Vector3.new(0, 2.6, 0), Color3.fromRGB(74, 62, 48))
-		piece("Head", Vector3.new(1.5, 1.5, 1.5), Vector3.new(0, 4.5, 0), Color3.fromRGB(212, 180, 148), Enum.PartType.Ball)
-		piece("Hood", Vector3.new(1.9, 0.6, 1.9), Vector3.new(0, 5.1, 0), Color3.fromRGB(58, 48, 38))
-		local board = Instance.new("BillboardGui")
-		board.Size = UDim2.fromOffset(200, 40)
-		board.StudsOffset = Vector3.new(0, 3.4, 0)
-		board.AlwaysOnTop = true
-		board.Parent = point
-		local label = Instance.new("TextLabel")
-		label.Size = UDim2.fromScale(1, 1)
-		label.BackgroundTransparency = 1
-		label.Font = Enum.Font.GothamBold
-		label.TextScaled = true
-		label.TextColor3 = Color3.fromRGB(240, 224, 186)
-		label.Text = "ОРУЖЕЙНИК"
-		label.Parent = board
-	end
-
 	if World.vendorPoint then
-		makeVendor(World.vendorPoint)
+		ctx.vendor.ensure(World.vendorPoint)
 		local prompt = makePrompt(World.vendorPoint, "Торговать", "Оружейник", 12)
 		prompt.Triggered:Connect(function(player)
 			ctx.shop.open(player)
@@ -1295,6 +1460,7 @@ local Stats = require(folder.Stats)
 local Melee = require(folder.Melee)
 local Arrows = require(folder.Arrows)
 local Shop = require(folder.Shop)
+local Vendor = require(folder.Vendor)
 
 local net = Net.server()
 World.init(Config)
@@ -1308,6 +1474,7 @@ local ctx = {
 	melee = Melee,
 	arrows = Arrows,
 	shop = Shop,
+	vendor = Vendor,
 }
 
 Arsenal.init(ctx)
@@ -1360,7 +1527,8 @@ net.Block.OnServerEvent:Connect(function(player, on)
 	Stats.setBlocking(player, on == true)
 end)
 
-net.DrawStart.OnServerEvent:Connect(function(player)
+net.DrawStart.OnServerEvent:Connect(function(player, active)
+	if active == false then Stats.get(player).drawStarted = 0 return end
 	Arrows.drawStart(player)
 end)
 
@@ -1417,7 +1585,7 @@ local panel = Instance.new("Frame")
 panel.Name = "Panel"
 panel.AnchorPoint = Vector2.new(0, 1)
 panel.Position = UDim2.new(0, 18, 1, -18)
-panel.Size = UDim2.fromOffset(300, 116)
+panel.Size = UDim2.fromOffset(300, 136)
 panel.BackgroundColor3 = Color3.fromRGB(26, 24, 20)
 panel.BackgroundTransparency = 0.25
 panel.BorderSizePixel = 0
@@ -1474,8 +1642,19 @@ armorLabel.TextColor3 = Color3.fromRGB(196, 200, 186)
 armorLabel.Text = "Броня: нет"
 armorLabel.Parent = panel
 
+local goldLabel = Instance.new("TextLabel")
+goldLabel.Position = UDim2.fromOffset(12, 92)
+goldLabel.Size = UDim2.fromOffset(276, 18)
+goldLabel.BackgroundTransparency = 1
+goldLabel.Font = Enum.Font.GothamMedium
+goldLabel.TextSize = 13
+goldLabel.TextXAlignment = Enum.TextXAlignment.Left
+goldLabel.TextColor3 = Color3.fromRGB(196, 172, 92)
+goldLabel.Text = "Золото: " .. tostring(player:GetAttribute("Gold") or 0)
+goldLabel.Parent = panel
+
 local hints = Instance.new("TextLabel")
-hints.Position = UDim2.fromOffset(12, 92)
+hints.Position = UDim2.fromOffset(12, 112)
 hints.Size = UDim2.fromOffset(276, 16)
 hints.BackgroundTransparency = 1
 hints.Font = Enum.Font.GothamMedium
@@ -1519,7 +1698,7 @@ drawFill.Parent = drawBack
 local notices = Instance.new("Frame")
 notices.Name = "Notices"
 notices.AnchorPoint = Vector2.new(0, 1)
-notices.Position = UDim2.new(0, 18, 1, -142)
+notices.Position = UDim2.new(0, 18, 1, -162)
 notices.Size = UDim2.fromOffset(460, 110)
 notices.BackgroundTransparency = 1
 notices.Parent = gui
@@ -1676,6 +1855,12 @@ local function pushNotice(text, kind)
 end
 
 remotes.Hud.OnClientEvent:Connect(function(hud)
+	if hud.gold ~= nil then
+		state.gold = hud.gold
+		shopGoldValue = hud.gold
+		goldLabel.Text = "Золото: " .. tostring(hud.gold)
+		shopGold.Text = goldLabel.Text
+	end
 	if hud.weaponKind then
 		state.weaponKind = hud.weaponKind
 	end
@@ -1755,6 +1940,14 @@ UserInputService.InputEnded:Connect(function(input)
 	end
 end)
 
+UserInputService.WindowFocusReleased:Connect(function()
+	remotes.Block:FireServer(false)
+	if drawing then remotes.DrawStart:FireServer(false) end
+	drawing = false
+	drawBack.Visible = false
+	drawFill.Size = UDim2.fromScale(1, 0)
+end)
+
 player.CharacterAdded:Connect(function()
 	drawing = false
 	drawBack.Visible = false
@@ -1762,6 +1955,7 @@ player.CharacterAdded:Connect(function()
 	recentX, recentY = 0, 0
 end)
 
+local lastHealth, lastStamina, lastDraw = -1, -1, -1
 RunService.RenderStepped:Connect(function()
 	local delta = UserInputService:GetMouseDelta()
 	recentX = recentX * 0.7 + delta.X
@@ -1769,6 +1963,7 @@ RunService.RenderStepped:Connect(function()
 
 	-- Safety: the button can be released outside the window, which would leave the draw stuck.
 	if drawing and not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+		remotes.DrawStart:FireServer(false)
 		drawing = false
 		drawBack.Visible = false
 		drawFill.Size = UDim2.fromScale(1, 0)
@@ -1778,24 +1973,33 @@ RunService.RenderStepped:Connect(function()
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	if humanoid then
 		local health = math.clamp(humanoid.Health / math.max(1, humanoid.MaxHealth), 0, 1)
-		healthFill.Size = UDim2.fromScale(health, 1)
+		if health ~= lastHealth then healthFill.Size = UDim2.fromScale(health, 1) lastHealth = health end
 	end
-	staminaFill.Size = UDim2.fromScale(math.clamp(state.stamina / math.max(1, state.staminaMax), 0, 1), 1)
-	if shopPanel.Visible then
-		shopGold.Text = "Золото: " .. tostring(player:GetAttribute("Gold") or shopGoldValue)
-	end
+	local stamina = math.clamp(state.stamina / math.max(1, state.staminaMax), 0, 1)
+	if stamina ~= lastStamina then staminaFill.Size = UDim2.fromScale(stamina, 1) lastStamina = stamina end
 
 	if drawing then
 		local power = math.clamp((os.clock() - drawStarted - bowDrawMin) / math.max(0.01, bowDrawMax - bowDrawMin), 0, 1)
-		drawFill.Size = UDim2.fromScale(1, power)
+		if power ~= lastDraw then drawFill.Size = UDim2.fromScale(1, power) lastDraw = power end
 	end
 end)
 ]]
 editor:UpdateSourceAsync(obj,function() return source end)
 obj.Enabled=true
 end
-print("COMBAT_INSTALL_OK",10,"source files")
+-- Bake the shopkeeper in edit mode too; runtime reuses the same model.
+do
+local map=workspace:FindFirstChild("Map")
+local yard=map and map:FindFirstChild("TrainingYard")
+if yard then
+local vendor=require(ServerScriptService.Combat.Vendor)
+for _,point in yard:GetDescendants() do
+if point:IsA("BasePart") and point:GetAttribute("CombatPoint")=="Vendor" then vendor.ensure(point) break end
+end
+end
+end
+print("COMBAT_INSTALL_OK",11,"source files")
 do
 local config=ReplicatedStorage:FindFirstChild("CombatConfig")
-if config then config:SetAttribute("InstalledBuild",2) end
+if config then config:SetAttribute("InstalledBuild",4) end
 end

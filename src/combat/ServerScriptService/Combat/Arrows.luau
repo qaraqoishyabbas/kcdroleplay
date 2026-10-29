@@ -28,6 +28,13 @@ end
 function Arrows.release(player, aim)
 	local now = workspace:GetServerTimeNow()
 	local state = ctx.stats.get(player)
+	if not ctx.stats.canAct(player, now) then state.drawStarted = 0 return end
+	if aim ~= nil then
+		if typeof(aim) ~= "Vector3" then state.drawStarted = 0 return end
+		for _, n in {aim.X,aim.Y,aim.Z} do
+			if n ~= n or math.abs(n) > 1e6 then state.drawStarted = 0 return end
+		end
+	end
 	local weapon = ctx.arsenal.weaponDefinition(state.weapon or "")
 	if not weapon or weapon.Kind ~= "Bow" then
 		return
@@ -78,10 +85,12 @@ function Arrows.release(player, aim)
 	arrow.CanQuery = false
 	arrow.Massless = false
 	arrow.Parent = workspace
+	if arrow.SetNetworkOwner then arrow:SetNetworkOwner(nil) end
 	arrow.AssemblyLinearVelocity = direction * speed
 
 	table.insert(active, {
 		part = arrow,
+		previousPosition = origin,
 		owner = player,
 		damage = damage,
 		expire = now + ctx.config.Arrow.Lifetime,
@@ -102,7 +111,9 @@ function Arrows.loop()
 				end
 				table.remove(active, index)
 			else
-				local step = arrow.AssemblyLinearVelocity * ctx.config.Arrow.Step
+				local from = record.previousPosition or arrow.Position
+				local step = arrow.Position + arrow.AssemblyLinearVelocity * ctx.config.Arrow.Step - from
+				record.previousPosition = arrow.Position
 				if step.Magnitude > 0.05 then
 					local params = RaycastParams.new()
 					params.FilterType = Enum.RaycastFilterType.Exclude
@@ -112,12 +123,23 @@ function Arrows.loop()
 						table.insert(exclude, ownerCharacter)
 					end
 					params.FilterDescendantsInstances = exclude
-					local hit = workspace:Raycast(arrow.Position, step, params)
+					local hit = workspace:Raycast(from, step, params)
 					if hit then
 						local hitModel = hit.Instance and hit.Instance:FindFirstAncestorOfClass("Model")
 						local target = hitModel and Players:GetPlayerFromCharacter(hitModel) or nil
 						if target and target ~= record.owner then
 							ctx.stats.damage(target, record.damage, record.owner, "стрела", 0.15)
+						elseif record.owner and record.owner.Parent then
+							local state = ctx.stats.get(record.owner)
+							if now-state.lastTrainReward >= ctx.config.Gold.DummyCooldown then
+								for _, training in ctx.world.trainingParts do
+									if hit.Instance == training then
+										state.lastTrainReward = now
+										ctx.stats.addGold(record.owner, ctx.config.Gold.DummyReward, "мишень")
+										break
+									end
+								end
+							end
 						end
 						arrow.AssemblyLinearVelocity = Vector3.zero
 						arrow.Anchored = true

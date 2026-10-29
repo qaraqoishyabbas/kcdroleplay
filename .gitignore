@@ -6,3 +6,10 @@
 
 # Локальные файлы рабочего пространства Hermes
 _hermes/
+
+# Python asset packagers
+__pycache__/
+*.pyc
+
+# Reproducible test output
+test-results/

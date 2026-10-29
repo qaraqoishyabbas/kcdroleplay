@@ -21,7 +21,7 @@ local panel = Instance.new("Frame")
 panel.Name = "Panel"
 panel.AnchorPoint = Vector2.new(0, 1)
 panel.Position = UDim2.new(0, 18, 1, -18)
-panel.Size = UDim2.fromOffset(300, 116)
+panel.Size = UDim2.fromOffset(300, 136)
 panel.BackgroundColor3 = Color3.fromRGB(26, 24, 20)
 panel.BackgroundTransparency = 0.25
 panel.BorderSizePixel = 0
@@ -78,8 +78,19 @@ armorLabel.TextColor3 = Color3.fromRGB(196, 200, 186)
 armorLabel.Text = "Броня: нет"
 armorLabel.Parent = panel
 
+local goldLabel = Instance.new("TextLabel")
+goldLabel.Position = UDim2.fromOffset(12, 92)
+goldLabel.Size = UDim2.fromOffset(276, 18)
+goldLabel.BackgroundTransparency = 1
+goldLabel.Font = Enum.Font.GothamMedium
+goldLabel.TextSize = 13
+goldLabel.TextXAlignment = Enum.TextXAlignment.Left
+goldLabel.TextColor3 = Color3.fromRGB(196, 172, 92)
+goldLabel.Text = "Золото: " .. tostring(player:GetAttribute("Gold") or 0)
+goldLabel.Parent = panel
+
 local hints = Instance.new("TextLabel")
-hints.Position = UDim2.fromOffset(12, 92)
+hints.Position = UDim2.fromOffset(12, 112)
 hints.Size = UDim2.fromOffset(276, 16)
 hints.BackgroundTransparency = 1
 hints.Font = Enum.Font.GothamMedium
@@ -123,7 +134,7 @@ drawFill.Parent = drawBack
 local notices = Instance.new("Frame")
 notices.Name = "Notices"
 notices.AnchorPoint = Vector2.new(0, 1)
-notices.Position = UDim2.new(0, 18, 1, -142)
+notices.Position = UDim2.new(0, 18, 1, -162)
 notices.Size = UDim2.fromOffset(460, 110)
 notices.BackgroundTransparency = 1
 notices.Parent = gui
@@ -280,6 +291,12 @@ local function pushNotice(text, kind)
 end
 
 remotes.Hud.OnClientEvent:Connect(function(hud)
+	if hud.gold ~= nil then
+		state.gold = hud.gold
+		shopGoldValue = hud.gold
+		goldLabel.Text = "Золото: " .. tostring(hud.gold)
+		shopGold.Text = goldLabel.Text
+	end
 	if hud.weaponKind then
 		state.weaponKind = hud.weaponKind
 	end
@@ -359,6 +376,14 @@ UserInputService.InputEnded:Connect(function(input)
 	end
 end)
 
+UserInputService.WindowFocusReleased:Connect(function()
+	remotes.Block:FireServer(false)
+	if drawing then remotes.DrawStart:FireServer(false) end
+	drawing = false
+	drawBack.Visible = false
+	drawFill.Size = UDim2.fromScale(1, 0)
+end)
+
 player.CharacterAdded:Connect(function()
 	drawing = false
 	drawBack.Visible = false
@@ -366,6 +391,7 @@ player.CharacterAdded:Connect(function()
 	recentX, recentY = 0, 0
 end)
 
+local lastHealth, lastStamina, lastDraw = -1, -1, -1
 RunService.RenderStepped:Connect(function()
 	local delta = UserInputService:GetMouseDelta()
 	recentX = recentX * 0.7 + delta.X
@@ -373,6 +399,7 @@ RunService.RenderStepped:Connect(function()
 
 	-- Safety: the button can be released outside the window, which would leave the draw stuck.
 	if drawing and not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+		remotes.DrawStart:FireServer(false)
 		drawing = false
 		drawBack.Visible = false
 		drawFill.Size = UDim2.fromScale(1, 0)
@@ -382,15 +409,13 @@ RunService.RenderStepped:Connect(function()
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	if humanoid then
 		local health = math.clamp(humanoid.Health / math.max(1, humanoid.MaxHealth), 0, 1)
-		healthFill.Size = UDim2.fromScale(health, 1)
+		if health ~= lastHealth then healthFill.Size = UDim2.fromScale(health, 1) lastHealth = health end
 	end
-	staminaFill.Size = UDim2.fromScale(math.clamp(state.stamina / math.max(1, state.staminaMax), 0, 1), 1)
-	if shopPanel.Visible then
-		shopGold.Text = "Золото: " .. tostring(player:GetAttribute("Gold") or shopGoldValue)
-	end
+	local stamina = math.clamp(state.stamina / math.max(1, state.staminaMax), 0, 1)
+	if stamina ~= lastStamina then staminaFill.Size = UDim2.fromScale(stamina, 1) lastStamina = stamina end
 
 	if drawing then
 		local power = math.clamp((os.clock() - drawStarted - bowDrawMin) / math.max(0.01, bowDrawMax - bowDrawMin), 0, 1)
-		drawFill.Size = UDim2.fromScale(1, power)
+		if power ~= lastDraw then drawFill.Size = UDim2.fromScale(1, power) lastDraw = power end
 	end
 end)

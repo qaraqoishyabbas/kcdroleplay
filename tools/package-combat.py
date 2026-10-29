@@ -8,7 +8,7 @@ import json
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src" / "combat"
 TARGET = ROOT / "install-combat.luau"
-BUILD_ID = 2
+BUILD_ID = 4
 
 
 def quote(text: str) -> str:
@@ -74,6 +74,19 @@ for path in sorted(SRC.rglob("*.luau")):
     lines.append("end")
     manifest.append({"file": str(relative), "path": "/".join(parts[:-1] + [name]), "class": klass})
 
+lines.extend([
+    '-- Bake the shopkeeper in edit mode too; runtime reuses the same model.',
+    'do',
+    'local map=workspace:FindFirstChild("Map")',
+    'local yard=map and map:FindFirstChild("TrainingYard")',
+    'if yard then',
+    'local vendor=require(ServerScriptService.Combat.Vendor)',
+    'for _,point in yard:GetDescendants() do',
+    'if point:IsA("BasePart") and point:GetAttribute("CombatPoint")=="Vendor" then vendor.ensure(point) break end',
+    'end',
+    'end',
+    'end',
+])
 lines.append('print("COMBAT_INSTALL_OK",' + str(len(manifest)) + ',"source files")')
 lines.append("do")
 lines.append('local config=ReplicatedStorage:FindFirstChild("CombatConfig")')

@@ -1,0 +1,29 @@
+CROWNLANDS VISUAL APPROVAL v0.1 / 2026-10-29
+
+Generation method: built-in ImageGen; no CLI/API fallback.
+Two original generated images; no external reference image or third-party texture imported.
+Use case: stylized-concept.
+
+STYLE COMPARISON - normalized final prompt specification:
+Use case: stylized-concept. Create one landscape art direction comparison board for a medieval Roblox RPG named Crownlands. Three side-by-side panels A, B, C show the same two-story timber-and-plaster medieval house with a correctly built gabled roof, stone footing, merchant canopy, merchant, fence and oak tree at the same three-quarter camera angle and neutral daylight. A: restrained stylized game-ready 3D; warm cream plaster, dark oak, muted clay roof, gray stone, matte leather, olive foliage, moderate detail. B: softer playful painterly stylization, brighter coherent colors, same architecture. C: more realistic weathered materials and subdued colors, same architecture. Entire house visible, continuous ridge, closed gables, correct eaves, no floating pieces, no modern objects or magic, no UI. No text except A B C, no logos or watermark. Original concept comparison, not an in-game screenshot.
+
+MATERIAL BOARD - final prompt:
+Use case: stylized-concept.
+Asset type: medieval Roblox game art material approval board, concept only, not a finished texture atlas.
+Create one professional landscape contact sheet showing twelve distinct square material samples, arranged in exactly four columns and three rows on a pale warm neutral background with even narrow gutters. Give each square a small crisp ID in its upper left corner: first row M01 M02 M03 M04, second row M05 M06 M07 M08, third row M09 M10 M11 M12. No other text.
+Style: coherent restrained stylized 3D game materials, visible large readable patterns, matte surfaces, simple slightly painterly shapes, moderate detail, no fine noisy photorealism, no dramatic weathering. Natural medieval European village palette. Flat face-on samples, no perspective or rounded sample balls, neutral even diffuse illumination, no cast shadows or baked sunlight.
+M01 warm cream lime plaster, approximate base color #CEC1A5, very subtle broad surface variation.
+M02 dark structural oak timber #554438, broad restrained grain, no painted symbols.
+M03 light oak planks #8B7357, a small number of wide planks, simple grain.
+M04 gray stone masonry #848279, modestly irregular rectangular stones, restrained mortar.
+M05 muted russet clay roof tiles #8C5A43, clearly overlapping tile rows.
+M06 dark gray brown wooden roof shingles #5C5A50, overlapping broad shingles.
+M07 brown leather #795138, very subtle natural grain.
+M08 natural linen fabric #B7AA88, coarse stylized weave.
+M09 dark wrought iron #5B5E5C, softly varied matte metal, no bright mirror highlight.
+M10 compacted earth path #897454, occasional restrained small stones.
+M11 meadow grass #74805A, stylized clustered short blades seen from above, simple readable shapes.
+M12 oak foliage #4F6647, stylized broad leaf clusters seen face-on, no twigs obscuring the sample.
+All twelve should belong to the same village and same art direction. Colors are approximate references, not literal uniform fills. IDs must be unique and in correct row-major order. No logos, watermark, objects, buildings, characters, decorations or explanatory captions.
+
+QA: A/B/C and M01-M12 must remain distinct. Concepts are approval references, not imported Roblox assets, a measured performance claim, or production-ready seamless PBR maps.

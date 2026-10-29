@@ -1,0 +1,7 @@
+2026-10-29 / Native Studio edit-mode verification
+STYLE_MAIN_EDIT_PASS {"trees":3066,"variants":9,"playStarted":false,"buildings":103,"sourceBuild":4,"unionTriangles":3820914,"unions":3886,"assertions":15487,"parts":9906}
+MAP_EDIT_PASS 9942 assertions; combat= true source scripts= 12
+COMBAT_EDIT_PASS 37 assertions; 126 parts
+FINAL_NATIVE_PASS: saved geometry, map, combat installation and 12 source files verified; Play=false
+MAIN_SHA256 6e1f1390477316deebaae0e23efd0ed4967bf9d11b2bca68adbd1fd8925a9ab9
+MECHANICS_SCENARIOS 78 passed

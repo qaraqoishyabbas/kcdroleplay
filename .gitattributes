@@ -1,0 +1,7 @@
+# Preserve binary Roblox places and approved visual references exactly.
+*.rbxl binary
+*.rbxm binary
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary

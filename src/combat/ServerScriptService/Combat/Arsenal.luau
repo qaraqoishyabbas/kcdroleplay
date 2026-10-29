@@ -66,9 +66,10 @@ local function mountModel(character, modelName, weaponId, side, grip)
 	local model = Instance.new("Model")
 	model.Name = modelName
 	local base = nil
+	local frame = hand.CFrame * (grip or CFrame.Angles(math.rad(75), 0, 0))
 	for index, spec in specs do
 		local color = spec.Color == "Dark" and ctx.config.Grey.Dark or ctx.config.Grey.Color
-		local item = makePart(model, spec.Name, spec.Size, CFrame.new() * spec.Offset, color)
+		local item = makePart(model, spec.Name, spec.Size, frame * spec.Offset, color)
 		if index == 1 then
 			base = item
 		end
@@ -79,12 +80,17 @@ local function mountModel(character, modelName, weaponId, side, grip)
 	end
 	for _, item in model:GetChildren() do
 		if item ~= base and item:IsA("BasePart") then
-			weldTo(item, base, CFrame.new())
+			local joint = Instance.new("WeldConstraint")
+			joint.Part0 = base
+			joint.Part1 = item
+			joint.Parent = item
 		end
 	end
 	model.Parent = character
-	base.CFrame = hand.CFrame * (grip or CFrame.Angles(math.rad(75), 0, 0))
-	weldTo(base, hand, grip or CFrame.Angles(math.rad(75), 0, 0))
+	local joint = Instance.new("WeldConstraint")
+	joint.Part0 = hand
+	joint.Part1 = base
+	joint.Parent = base
 	model.PrimaryPart = base
 	return model
 end
@@ -103,29 +109,31 @@ function Arsenal.setWeapon(player, weaponId)
 	if not character then
 		return false
 	end
-	Arsenal.clearWeapon(player)
 	local definition = Arsenal.weaponDefinition(weaponId)
-	if not definition then
+	if not definition or (definition.Kind ~= "Melee" and definition.Kind ~= "Bow") then
 		return false
 	end
 	local model = mountModel(character, "Weapon_" .. weaponId, weaponId, "right", GRIP[weaponId])
 	if not model then
 		return false
 	end
+	Arsenal.clearWeapon(player, model)
 	state.weapon = weaponId
 	ctx.net.Hud:FireClient(player, ctx.stats.hudFor(player))
 	return true
 end
 
-function Arsenal.clearWeapon(player)
+function Arsenal.clearWeapon(player, preserve)
 	local state = ctx.stats.get(player)
 	state.weapon = nil
+	state.drawStarted = 0
+	state.actionSerial += 1
 	local character = player.Character
 	if not character then
 		return
 	end
 	for _, item in character:GetChildren() do
-		if item:IsA("Model") and string.sub(item.Name, 1, 7) == "Weapon_" then
+		if item ~= preserve and item:IsA("Model") and item.Name ~= "Weapon_Shield" and string.sub(item.Name, 1, 7) == "Weapon_" then
 			item:Destroy()
 		end
 	end

@@ -59,6 +59,12 @@ function Shop.buy(player, itemId)
 		ctx.net.Notice:FireClient(player, { text = "Сначала вернись в бой", kind = "bad" })
 		return
 	end
+	local root = character:FindFirstChild("HumanoidRootPart")
+	local vendor = ctx.world.vendorPoint
+	if not root or not vendor or not vendor.Parent or (root.Position-vendor.Position).Magnitude > 14 then
+		ctx.net.Notice:FireClient(player, { text = "Подойди к оружейнику", kind = "bad" })
+		return
+	end
 	local gold = ctx.stats.getGold(player)
 	if gold < item.Price then
 		ctx.net.Notice:FireClient(player, { text = "Не хватает " .. (item.Price - gold) .. " золота", kind = "bad" })

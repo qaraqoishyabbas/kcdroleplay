@@ -1,7 +1,7 @@
 -- Medieval combat tuning. All numbers live here; nothing else in the project hardcodes damage.
 local Config = {}
 
-Config.Version = "combat 1.0"
+Config.Version = "combat 1.1"
 Config.ModelName = "TrainingYard"
 
 Config.Player = { MaxHealth = 100, RespawnTime = 4, StartGold = 200 }
